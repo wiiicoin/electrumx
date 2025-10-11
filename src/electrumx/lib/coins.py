@@ -36,9 +36,9 @@ from decimal import Decimal
 from functools import partial
 from hashlib import sha256
 from typing import Sequence, Tuple
-
+import hashlib
 import electrumx.lib.util as util
-from electrumx.lib.hash import Base58, sha256d, double_sha256, hash_to_hex_str
+from electrumx.lib.hash import Base58, double_sha256, hash_to_hex_str
 from electrumx.lib.hash import HASHX_LEN, hex_str_to_hash
 from electrumx.lib.script import (_match_ops, Script, ScriptError,
                                   ScriptPubKey, OpCodes)
@@ -51,6 +51,10 @@ import electrumx.server.daemon as daemon
 from electrumx.server.session import (ElectrumX, DashElectrumX,
                                       SmartCashElectrumX, AuxPoWElectrumX,
                                       NameIndexElectrumX, NameIndexAuxPoWElectrumX)
+
+def sha256d(b: bytes) -> bytes:
+    """Double SHA256 (Bitcoin-style)"""
+    return hashlib.sha256(hashlib.sha256(b).digest()).digest()
 
 
 @dataclass(slots=True)
