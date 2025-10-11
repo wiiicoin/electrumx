@@ -364,6 +364,7 @@ class Wiiicoin(BitcoinMixin, Coin):
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
     NETWORK = "main"
+    GENESIS_HASH = "000000b6342a3f29e384a67490086d5dd987f6947a4308d56a893294b96fa146"
     REORG_LIMIT = 200
     TX_COUNT = 100
     TX_COUNT_HEIGHT = 100
