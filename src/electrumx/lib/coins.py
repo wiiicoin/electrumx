@@ -363,7 +363,7 @@ class Bitcoin(BitcoinMixin, Coin):
 class Wiiicoin(BitcoinMixin, Coin):
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
-    NET = "main"
+    NETWORK = "main"
     REORG_LIMIT = 200
     TX_COUNT = 100
     TX_COUNT_HEIGHT = 100
