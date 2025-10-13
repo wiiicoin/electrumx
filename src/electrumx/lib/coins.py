@@ -399,8 +399,8 @@ class Wiiicoin(Litecoin):
     TX_PER_BLOCK = 1
     RPC_PORT = 8868
 
-    DESERIALIZER = lib_tx.DeserializerAuxPow
-    
+    DESERIALIZER = lib_tx.DeserializerAuxPowSegWit
+
 
 
     # Bitcoin-like double SHA256 hashing
