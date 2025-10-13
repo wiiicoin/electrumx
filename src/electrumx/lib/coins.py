@@ -399,7 +399,7 @@ class Wiiicoin(Litecoin):
     TX_PER_BLOCK = 1
     RPC_PORT = 8868
 
-    DESERIALIZER = lib_tx.DeserializerAuxPowSegWit
+    DESERIALIZER = lib_tx.DeserializerWiiicoin
 
 
 

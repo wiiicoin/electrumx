@@ -303,6 +303,22 @@ class DeserializerSegWit(Deserializer):
     def read_tx(self):
         return self._read_tx_parts()[0]
 
+class DeserializerWiiicoin(DeserializerTxTimeSegWit):
+    """Skip Wiiicoin’s AuxPoW data between header and tx_count."""
+
+    def read_block(self):
+        self._skip_auxpow()
+        return super().read_block()
+
+    def _skip_auxpow(self):
+        # The extra blob begins right after the 80-byte header.
+        # From your sample: starts with 0x4c 0x0c 0x00 ...
+        # 0x4c means OP_PUSHDATA1; next byte is the length.
+        if self.binary[self.cursor] == 0x4c:
+            length = self.binary[self.cursor + 1]
+            self.cursor += 2 + length
+
+
 
 class DeserializerLitecoin(DeserializerSegWit):
     '''Class representing Litecoin transactions, which may have the MW flag set.
