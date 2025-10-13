@@ -38,7 +38,6 @@ from hashlib import sha256
 from typing import Sequence, Tuple
 import hashlib
 import electrumx.lib.util as util
-from electrumx.lib.coins import Bitcoin
 from electrumx.lib.hash import Base58, double_sha256, hash_to_hex_str
 from electrumx.lib.hash import HASHX_LEN, hex_str_to_hash
 from electrumx.lib.script import (_match_ops, Script, ScriptError,
