@@ -364,7 +364,7 @@ class Wiiicoin(BitcoinMixin, Coin):
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
     NETWORK = "main"
-    GENESIS_HASH = "4a354fff2fd4749d8eee5e22a8493cde090460c9d75e6443ebdb591d"
+    GENESIS_HASH = "000000b6342a3f29e384a67490086d5dd987f6947a4308d56a893294b96fa146"
     REORG_LIMIT = 200
     TX_COUNT = 100
     TX_COUNT_HEIGHT = 100
@@ -372,56 +372,56 @@ class Wiiicoin(BitcoinMixin, Coin):
     RPC_PORT = 8868
 
     # Bitcoin-like double SHA256 hashing
-    @classmethod
-    def header_hash(cls, header: bytes) -> bytes:
-        return sha256d(header)[::-1]
+    # @classmethod
+    # def header_hash(cls, header: bytes) -> bytes:
+    #     return sha256d(header)[::-1]
 
-    # --- Required RPC wrappers ---
-    @classmethod
-    def rpc_getblockcount(self):
-        return self.daemon_request('getblockcount')
+    # # --- Required RPC wrappers ---
+    # @classmethod
+    # def rpc_getblockcount(self):
+    #     return self.daemon_request('getblockcount')
     
-    @classmethod
-    def rpc_getblockhash(self, height: int):
-        return  self.daemon_request('getblockhash', [height])
+    # @classmethod
+    # def rpc_getblockhash(self, height: int):
+    #     return  self.daemon_request('getblockhash', [height])
 
-    @classmethod
-    def rpc_getbestblockhash(self):
-        return  self.daemon_request('getbestblockhash')
+    # @classmethod
+    # def rpc_getbestblockhash(self):
+    #     return  self.daemon_request('getbestblockhash')
 
-    @classmethod
-    def rpc_getblockheader(self, block_hash: str):
-        return  self.daemon_request('getblockheader', [block_hash, True])
+    # @classmethod
+    # def rpc_getblockheader(self, block_hash: str):
+    #     return  self.daemon_request('getblockheader', [block_hash, True])
 
-    @classmethod
-    def rpc_getblock(self, block_hash: str):
-        return  self.daemon_request('getblock', [block_hash, 0])
+    # @classmethod
+    # def rpc_getblock(self, block_hash: str):
+    #     return  self.daemon_request('getblock', [block_hash, 0])
 
-    @classmethod
-    def rpc_getrawtransaction(self, txid: str, verbose=True, blockhash=None):
-        params = [txid, int(verbose)]
-        if blockhash:
-            params.append(blockhash)
-        return  self.daemon_request('getrawtransaction', params)
+    # @classmethod
+    # def rpc_getrawtransaction(self, txid: str, verbose=True, blockhash=None):
+    #     params = [txid, int(verbose)]
+    #     if blockhash:
+    #         params.append(blockhash)
+    #     return  self.daemon_request('getrawtransaction', params)
 
-    # --- Aliases to match ElectrumX internal calls ---
-    @classmethod
-    def rpc_getblockheaderbyheight(self, height: int):
-        """Alias if ElectrumX calls getblockheaderbyheight"""
-        return  self.daemon_request('getblockheaderbyheight', [height])
+    # # --- Aliases to match ElectrumX internal calls ---
+    # @classmethod
+    # def rpc_getblockheaderbyheight(self, height: int):
+    #     """Alias if ElectrumX calls getblockheaderbyheight"""
+    #     return  self.daemon_request('getblockheaderbyheight', [height])
 
-    @classmethod
-    def rpc_getblockheaderbyhash(self, height: int):
-        """Alias if ElectrumX calls getblockheaderbyhash"""
-        return  self.daemon_request('getblockheaderbyhash', [height])
+    # @classmethod
+    # def rpc_getblockheaderbyhash(self, height: int):
+    #     """Alias if ElectrumX calls getblockheaderbyhash"""
+    #     return  self.daemon_request('getblockheaderbyhash', [height])
 
-    @classmethod
-    def broadcast_package(self, raw_txs):
-    # Fallback: broadcast transactions individually
-        results = []
-        for raw_tx in raw_txs:
-            results.append(self._send_single('sendrawtransaction', (raw_tx,)))
-        return results
+    # @classmethod
+    # def broadcast_package(self, raw_txs):
+    # # Fallback: broadcast transactions individually
+    #     results = []
+    #     for raw_tx in raw_txs:
+    #         results.append(self._send_single('sendrawtransaction', (raw_tx,)))
+    #     return results
 
 class BitcoinTestnetMixin:
     SHORTNAME = "XTN"
