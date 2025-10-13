@@ -51,7 +51,6 @@ import electrumx.server.daemon as daemon
 from electrumx.server.session import (ElectrumX, DashElectrumX,
                                       SmartCashElectrumX, AuxPoWElectrumX,
                                       NameIndexElectrumX, NameIndexAuxPoWElectrumX)
-from electrumx.lib.coins import Litecoin
 
 def sha256d(b: bytes) -> bytes:
     """Double SHA256 (Bitcoin-style)"""
