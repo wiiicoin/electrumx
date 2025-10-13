@@ -38,11 +38,14 @@ from hashlib import sha256
 from typing import Sequence, Tuple
 import hashlib
 import electrumx.lib.util as util
+from electrumx.lib.coins import Bitcoin
 from electrumx.lib.hash import Base58, double_sha256, hash_to_hex_str
 from electrumx.lib.hash import HASHX_LEN, hex_str_to_hash
 from electrumx.lib.script import (_match_ops, Script, ScriptError,
                                   ScriptPubKey, OpCodes)
 import electrumx.lib.tx as lib_tx
+from electrumx.lib import tx as lib_tx
+
 from electrumx.lib.tx import Tx
 import electrumx.lib.tx_dash as lib_tx_dash
 import electrumx.lib.tx_axe as lib_tx_axe
@@ -371,7 +374,8 @@ class Wiiicoin(Bitcoin, Coin):
     TX_PER_BLOCK = 1
     RPC_PORT = 8868
 
-    DESERIALIZER = lib_tx.DeserializerSegWit
+    DESERIALIZER = lib_tx.DeserializerTxTimeSegWit
+
 
 
     # Bitcoin-like double SHA256 hashing
