@@ -51,6 +51,7 @@ import electrumx.server.daemon as daemon
 from electrumx.server.session import (ElectrumX, DashElectrumX,
                                       SmartCashElectrumX, AuxPoWElectrumX,
                                       NameIndexElectrumX, NameIndexAuxPoWElectrumX)
+from electrumx.lib.coins import Litecoin
 
 def sha256d(b: bytes) -> bytes:
     """Double SHA256 (Bitcoin-style)"""
@@ -360,7 +361,7 @@ class Bitcoin(BitcoinMixin, Coin):
             return n // 24 * 24
         return 1008
 
-class Wiiicoin(BitcoinMixin, Coin):
+class Wiiicoin(Litecoin, Coin):
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
     NETWORK = "main"
