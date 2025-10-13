@@ -45,7 +45,7 @@ from electrumx.lib.script import (_match_ops, Script, ScriptError,
 import electrumx.lib.tx as lib_tx
 from electrumx.lib import tx as lib_tx
 from electrumx.lib.hash import scrypt_1024_1_1_256
-        
+
 from electrumx.lib.tx import Tx
 import electrumx.lib.tx_dash as lib_tx_dash
 import electrumx.lib.tx_axe as lib_tx_axe
@@ -362,6 +362,32 @@ class Bitcoin(BitcoinMixin, Coin):
         if n <= 1008:
             return n // 24 * 24
         return 1008
+
+class Litecoin(Coin):
+    NAME = "Litecoin"
+    SHORTNAME = "LTC"
+    NET = "mainnet"
+    XPUB_VERBYTES = bytes.fromhex("0488b21e")
+    XPRV_VERBYTES = bytes.fromhex("0488ade4")
+    P2PKH_VERBYTE = bytes.fromhex("30")
+    P2SH_VERBYTES = (bytes.fromhex("32"), bytes.fromhex("05"))
+    WIF_BYTE = bytes.fromhex("b0")
+    GENESIS_HASH = ('12a765e31ffd4059bada1e25190f6e98'
+                    'c99d9714d334efa41a195a7e7e04bfe2')
+    DESERIALIZER = lib_tx.DeserializerLitecoin
+    TX_COUNT = 8908766
+    TX_COUNT_HEIGHT = 1105256
+    TX_PER_BLOCK = 10
+    RPC_PORT = 9332
+    REORG_LIMIT = 800
+    PEERS = [
+        'ex.lug.gs s444',
+        'electrum-ltc.bysh.me s t',
+        'electrum-ltc.ddns.net s t',
+        'electrum-ltc.wilv.in s t',
+        'electrum.cryptomachine.com p1000 s t',
+        'electrum.ltc.xurious.com s t',
+    ]
 
 class Wiiicoin(Litecoin):
     NAME = "Wiiicoin"
@@ -1089,31 +1115,7 @@ class Sumcoin(Coin):
     PEERS = []
 
 
-class Litecoin(Coin):
-    NAME = "Litecoin"
-    SHORTNAME = "LTC"
-    NET = "mainnet"
-    XPUB_VERBYTES = bytes.fromhex("0488b21e")
-    XPRV_VERBYTES = bytes.fromhex("0488ade4")
-    P2PKH_VERBYTE = bytes.fromhex("30")
-    P2SH_VERBYTES = (bytes.fromhex("32"), bytes.fromhex("05"))
-    WIF_BYTE = bytes.fromhex("b0")
-    GENESIS_HASH = ('12a765e31ffd4059bada1e25190f6e98'
-                    'c99d9714d334efa41a195a7e7e04bfe2')
-    DESERIALIZER = lib_tx.DeserializerLitecoin
-    TX_COUNT = 8908766
-    TX_COUNT_HEIGHT = 1105256
-    TX_PER_BLOCK = 10
-    RPC_PORT = 9332
-    REORG_LIMIT = 800
-    PEERS = [
-        'ex.lug.gs s444',
-        'electrum-ltc.bysh.me s t',
-        'electrum-ltc.ddns.net s t',
-        'electrum-ltc.wilv.in s t',
-        'electrum.cryptomachine.com p1000 s t',
-        'electrum.ltc.xurious.com s t',
-    ]
+
 
 
 class LitecoinTestnet(Litecoin):
