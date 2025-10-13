@@ -360,16 +360,19 @@ class Bitcoin(BitcoinMixin, Coin):
             return n // 24 * 24
         return 1008
 
-class Wiiicoin(Litecoin, Coin):
+class Wiiicoin(Bitcoin, Coin):
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
     NETWORK = "main"
     GENESIS_HASH = "f23121461d59dbeb43645ed7c9600409de3c49a8225eee8e9d74d42fff4f354a"
     REORG_LIMIT = 200
-    TX_COUNT = 100
-    TX_COUNT_HEIGHT = 100
+    TX_COUNT = 1
+    TX_COUNT_HEIGHT = 1
     TX_PER_BLOCK = 1
     RPC_PORT = 8868
+
+    DESERIALIZER = lib_tx.DeserializerSegWit
+
 
     # Bitcoin-like double SHA256 hashing
     # @classmethod
