@@ -1,0 +1,7 @@
+
+#erase the logs
+sudo systemctl stop systemd-journald
+sudo rm -rf /var/log/journal/*
+sudo systemctl start systemd-journald
+
+
