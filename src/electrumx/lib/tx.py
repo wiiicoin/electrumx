@@ -303,8 +303,8 @@ class DeserializerSegWit(Deserializer):
     def read_tx(self):
         return self._read_tx_parts()[0]
 
-class DeserializerWiiicoin(DeserializerTxTimeSegWit):
-    """Skip Wiiicoin’s AuxPoW data between header and tx_count."""
+class DeserializerWiiicoin(DeserializerSegWit):
+    """Skip Wiiicoin’s AuxPoW data betwen header and tx_count."""
 
     def read_block(self):
         self._skip_auxpow()
