@@ -388,7 +388,7 @@ class Litecoin(Coin):
         'electrum.ltc.xurious.com s t',
     ]
 
-class Wiiicoin(Litecoin):
+class Wiiicoin(Bitcoin):
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
     NETWORK = "main"
