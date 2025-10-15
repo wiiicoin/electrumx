@@ -303,20 +303,55 @@ class DeserializerSegWit(Deserializer):
     def read_tx(self):
         return self._read_tx_parts()[0]
 
+# --- Wiiicoin AuxPoW-aware deserializer ---
 class DeserializerWiiicoin(DeserializerSegWit):
-    """Skip Wiiicoin’s AuxPoW data betwen header and tx_count."""
+    """
+    Wiiicoin blocks place an AuxPoW section immediately after the 80-byte header.
+    We skip that section, then let the normal SegWit-aware reader parse txs.
+    """
 
-    def read_block(self):
-        self._skip_auxpow()
-        return super().read_block()
+    def read_tx_block(self):
+        # Called by coins.py -> cls.DESERIALIZER(...).read_tx_block()
+        self._skip_wiiicoin_auxpow()
+        return super().read_tx_block()
 
-    def _skip_auxpow(self):
-        # The extra blob begins right after the 80-byte header.
-        # From your sample: starts with 0x4c 0x0c 0x00 ...
-        # 0x4c means OP_PUSHDATA1; next byte is the length.
-        if self.binary[self.cursor] == 0x4c:
-            length = self.binary[self.cursor + 1]
-            self.cursor += 2 + length
+    def _skip_wiiicoin_auxpow(self):
+        # Your block sample shows bytes after header start with:
+        #   0x4c 0x0c 0x00 ... (OP_PUSHDATA1, len=0x0c, then 0x00…)
+        # We'll handle two cases:
+        #  (a) OP_PUSHDATA1 <len> <blob>
+        #  (b) fallback: a generic varint length + blob
+        # If neither matches, we leave cursor as-is and let parsing fail loudly.
+
+        # Safety: don't run beyond the buffer
+        if self.cursor >= self.binary_length:
+            return
+
+        b = self.binary[self.cursor]
+
+        # Case (a): OP_PUSHDATA1
+        if b == 0x4c and self.cursor + 1 < self.binary_length:
+            plen = self.binary[self.cursor + 1]
+            # move past: opcode + length + payload
+            end = self.cursor + 2 + plen
+            if end <= self.binary_length:
+                self.cursor = end
+                return
+
+        # Case (b): try a varint length and skip that many bytes
+        # Save cursor, attempt varint parse; if invalid, restore.
+        save = self.cursor
+        try:
+            aux_len = self._read_varint()
+            # Protect against absurd lengths
+            if 0 <= aux_len <= (self.binary_length - self.cursor):
+                self._read_nbytes(aux_len)
+                return
+        except Exception:
+            pass
+        finally:
+            # restore if we didn't successfully skip
+            self.cursor = save
 
 
 
