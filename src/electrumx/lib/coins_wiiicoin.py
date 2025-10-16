@@ -1,12 +1,12 @@
 # electrumx/lib/coins_wiiicoin.py
 from electrumx.lib.coins import Bitcoin
-from electrumx.lib.tx_wiiicoin import DeserializerWiiicoin
+from electrumx.lib.tx import DeserializerSegWit  # Use DeserializerSegWit if Wiiicoin has SegWit
 
 class Wiiicoin(Bitcoin):
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
     NET = "mainnet"  # change to "testnet" for testnet class if needed
-    DESERIALIZER = DeserializerWiiicoin
+    DESERIALIZER = DeserializerSegWit
 
     # Heuristics for mempool/throughput estimates; safe conservative defaults:
     TX_COUNT = 1

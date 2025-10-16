@@ -42,6 +42,7 @@ from electrumx.lib.hash import Base58, double_sha256, hash_to_hex_str
 from electrumx.lib.hash import HASHX_LEN, hex_str_to_hash
 from electrumx.lib.script import (_match_ops, Script, ScriptError,
                                   ScriptPubKey, OpCodes)
+from electrumx.lib.coins_wiiicoin import Wiiicoin
 import electrumx.lib.tx as lib_tx
 from electrumx.lib import tx as lib_tx
 
@@ -387,73 +388,6 @@ class Litecoin(Coin):
         'electrum.cryptomachine.com p1000 s t',
         'electrum.ltc.xurious.com s t',
     ]
-
-class Wiiicoin(Bitcoin):
-    NAME = "Wiiicoin"
-    SHORTNAME = "WIII"
-    NETWORK = "main"
-    GENESIS_HASH = "f23121461d59dbeb43645ed7c9600409de3c49a8225eee8e9d74d42fff4f354a"
-    REORG_LIMIT = 200
-    TX_COUNT = 1
-    TX_COUNT_HEIGHT = 1
-    TX_PER_BLOCK = 1
-    RPC_PORT = 8868
-
-    DESERIALIZER = lib_tx.DeserializerAuxPowSegWit
-
-
-
-    # Bitcoin-like double SHA256 hashing
-    @classmethod
-    def header_hash(cls, header: bytes) -> bytes:
-        return double_sha256(header)
-
-    # # --- Required RPC wrappers ---
-    # @classmethod
-    # def rpc_getblockcount(self):
-    #     return self.daemon_request('getblockcount')
-    
-    # @classmethod
-    # def rpc_getblockhash(self, height: int):
-    #     return  self.daemon_request('getblockhash', [height])
-
-    # @classmethod
-    # def rpc_getbestblockhash(self):
-    #     return  self.daemon_request('getbestblockhash')
-
-    # @classmethod
-    # def rpc_getblockheader(self, block_hash: str):
-    #     return  self.daemon_request('getblockheader', [block_hash, True])
-
-    # @classmethod
-    # def rpc_getblock(self, block_hash: str):
-    #     return  self.daemon_request('getblock', [block_hash, 0])
-
-    # @classmethod
-    # def rpc_getrawtransaction(self, txid: str, verbose=True, blockhash=None):
-    #     params = [txid, int(verbose)]
-    #     if blockhash:
-    #         params.append(blockhash)
-    #     return  self.daemon_request('getrawtransaction', params)
-
-    # # --- Aliases to match ElectrumX internal calls ---
-    # @classmethod
-    # def rpc_getblockheaderbyheight(self, height: int):
-    #     """Alias if ElectrumX calls getblockheaderbyheight"""
-    #     return  self.daemon_request('getblockheaderbyheight', [height])
-
-    # @classmethod
-    # def rpc_getblockheaderbyhash(self, height: int):
-    #     """Alias if ElectrumX calls getblockheaderbyhash"""
-    #     return  self.daemon_request('getblockheaderbyhash', [height])
-
-    # @classmethod
-    # def broadcast_package(self, raw_txs):
-    # # Fallback: broadcast transactions individually
-    #     results = []
-    #     for raw_tx in raw_txs:
-    #         results.append(self._send_single('sendrawtransaction', (raw_tx,)))
-    #     return results
 
 class BitcoinTestnetMixin:
     SHORTNAME = "XTN"
