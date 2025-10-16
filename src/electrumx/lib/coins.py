@@ -44,7 +44,7 @@ from electrumx.lib.script import (_match_ops, Script, ScriptError,
                                   ScriptPubKey, OpCodes)
 import electrumx.lib.tx as lib_tx
 from electrumx.lib import tx as lib_tx
-from electrumx.lib.tx import Tx, DeserializerSegWit
+from electrumx.lib.tx import Tx, DeserializerSegWit, DeserializerAuxPow
 import electrumx.lib.tx_dash as lib_tx_dash
 import electrumx.lib.tx_axe as lib_tx_axe
 import electrumx.server.block_processor as block_proc
@@ -474,7 +474,12 @@ class BitcoinTestnet4(BitcoinTestnet):
 ######################################################################
 # Non-Bitcoin stuff goes strictly below this line.
 ######################################################################
-
+class DeserializerWiiicoin(DeserializerAuxPow, DeserializerSegWit):
+    """
+    - read_header() comes from DeserializerAuxPow (handles AuxPoW header size)
+    - tx reading (SegWit marker/flag, witnesses) comes from DeserializerSegWit
+    """
+    pass
 
 class AuxPowMixin:
     STATIC_BLOCK_HEADERS = False
@@ -503,7 +508,7 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     SHORTNAME = "WIII"
     NET = "main"  # change to "testnet" for testnet class if needed
     GENESIS_HASH = ('f23121461d59dbeb43645ed7c9600409de3c49a8225eee8e9d74d42fff4f354a')
-    DESERIALIZER = DeserializerSegWit
+    DESERIALIZER = DeserializerWiiicoin
 
     # Heuristics for mempool/throughput estimates; safe conservative defaults:
     TX_COUNT = 1
