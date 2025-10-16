@@ -529,10 +529,13 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     def block_header(cls, raw_block: bytes, height: int) -> bytes:
         
         # --- caps used by helper parsers (must be in this scope!) ---
-        MAX_INPUTS   = 1_000_000
-        MAX_OUTPUTS  = 1_000_000
-        MAX_SCRIPT   = 100_000      # per scriptSig/scriptPubKey/witness item
-        MAX_WIT_STACK = 100_000     # max witness stack items per input
+        MAX_INPUTS = 1_000_000
+        MAX_OUTPUTS = 4_000_000
+        MAX_SCRIPT = 10_000_000        # generous but bounded
+        MAX_WIT_STACK = 1_000_000
+
+        def _is_reasonable_count(x, cap):  # keep if you already have it; else add
+            return isinstance(x, int) and 0 <= x <= cap     # max witness stack items per input
 
         # ... then your helpers:
         # def _is_reasonable_count(x, cap): ...
@@ -550,24 +553,36 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             aux_end = 80
 
         # ---------------- helpers ----------------
-        def read_varint_at(off):
-            if off >= n: return None, off
-            b0 = data[off]
-            if b0 < 0xfd:
-                return b0, off + 1
-            if b0 == 0xfd:
-                if off + 3 > n: return None, off
-                return int.from_bytes(data[off+1:off+3], "little"), off + 3
-            if b0 == 0xfe:
-                if off + 5 > n: return None, off
-                return int.from_bytes(data[off+1:off+5], "little"), off + 5
-            if off + 9 > n: return None, off
-            return int.from_bytes(data[off+1:off+9], "little"), off + 9
+        def read_varint_at(p):
+            if p >= n: 
+                return None, p
+            fb = data[p]; p += 1
+            if fb < 0xfd:
+                return fb, p
+            if fb == 0xfd:
+            if p + 2 > n: 
+                return None, p
+            return int.from_bytes(data[p:p+2], "little"), p + 2
+            if fb == 0xfe:
+                if p + 4 > n: 
+                    return None, p
+                return int.from_bytes(data[p:p+4], "little"), p + 4
+        # 0xff
+        if p + 8 > n: 
+            return None, p
+        return int.from_bytes(data[p:p+8], "little"), p + 8
 
-        def read_varbytes_at(off):
-            ln, p = read_varint_at(off)
-            if ln is None or p + ln > n: return None, off
-            return data[p:p+ln], p + ln
+        def read_varbytes_at(p):
+        
+            ln, p2 = read_varint_at(p)
+            if ln is None: 
+                return None, p
+            if ln < 0 or ln > MAX_SCRIPT:   # sanity
+                return None, p
+            end = p2 + ln
+            if end > n:
+                return None, p
+            return data[p2:end], end
 
         def parse_bip34_height(cscript: bytes):
             # Minimal push (1..5 bytes) at start containing the height.
