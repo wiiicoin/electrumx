@@ -367,6 +367,7 @@ class Wiiicoin(Bitcoin):
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
     NET = "main"  # change to "testnet" for testnet class if needed
+    GENESIS_HASH = ('f23121461d59dbeb43645ed7c9600409de3c49a8225eee8e9d74d42fff4f354a')
     DESERIALIZER = DeserializerSegWit
 
     # Heuristics for mempool/throughput estimates; safe conservative defaults:
