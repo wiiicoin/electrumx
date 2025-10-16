@@ -523,6 +523,11 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     # --- key fix: always parse block headers with AuxPoW reader ---
     @classmethod
     def block_header(cls, raw_block: bytes, height: int) -> bytes:
+        """
+        Return the full header (80 + AuxPoW + any padding) by finding the
+        first VALID coinbase transaction and taking the byte just before the
+        block's tx_count varint as the boundary.
+        """
         data = raw_block
         n = len(data)
 
@@ -563,7 +568,7 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             """
             p = off
             if p + 4 > n: return None
-            p += 4  # version (accept any 32-bit)
+            p += 4  # version (accept any)
 
             # optional segwit 00 01
             segwit = False
@@ -580,20 +585,20 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             if p + 36 > n: return None
             prev_hash = data[p:p+32]; p += 32
             vout = int.from_bytes(data[p:p+4], "little"); p += 4
-            if prev_hash != b"\x00" * 32 or vout != 0xffffffff:
+            if prev_hash != b"\x00"*32 or vout != 0xffffffff:
                 return None
 
             # coinbase script
             cscript, p = read_varbytes_at(p)
             if cscript is None: return None
-            if not (2 <= len(cscript) <= 2_000_000):  # generous upper bound
+            if not (2 <= len(cscript) <= 2_000_000):
                 return None
 
             # sequence
             if p + 4 > n: return None
             p += 4
 
-            # any extra inputs (rare in coinbase)
+            # extra inputs (rare in coinbase)
             for _ in range(max(0, vin_cnt - 1)):
                 if p + 36 > n: return None
                 p += 36
@@ -612,7 +617,7 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                 spk, p = read_varbytes_at(p)
                 if spk is None: return None
 
-            # segwit witnesses (one vector per input)
+            # segwit witnesses
             if segwit:
                 q = p
                 for _ in range(vin_cnt):
@@ -628,8 +633,8 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             p += 4
             return p
 
-        # 2) Try small paddings first: aux_end + k where k in [0..8]
-        for k in range(0, 9):
+        # 2) Try small paddings first (covers the stray 0x01 / 0x40 you showed)
+        for k in range(0, 9):  # try aux_end, aux_end+1, ... +8
             cand = aux_end + k
             if cand >= n - 10: break
             txc, j = read_varint_at(cand)
@@ -637,9 +642,9 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                 continue
             end0 = parses_coinbase_tx(j)
             if end0 is not None:
-                return data[:cand]  # header is everything before tx_count
+                return data[:cand]  # header ends immediately before tx_count
 
-        # 3) Wider scan as a last resort (up to +1.5 MiB)
+        # 3) Wider scan as a last resort (up to +1.5 MiB beyond aux_end)
         i = max(80, aux_end)
         limit = min(n - 10, i + 1_572_864)
         while i < limit:
