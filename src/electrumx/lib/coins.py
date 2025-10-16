@@ -581,85 +581,90 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             return False, None
 
         def parse_tx_at(off, require_coinbase=False):
-            p = off
-            if p + 4 > n: return None, False, 0, 0, None
-            p += 4  # version
+        p = off
+    if p + 4 > n: return None, False, 0, 0, None
+    version = int.from_bytes(data[p:p+4], "little"); p += 4
 
-            # Optional segwit marker/flag: only treat as segwit if 00 01
-            segwit = False
-            if p + 2 <= n and data[p] == 0x00 and data[p+1] == 0x01:
-                segwit = True
-                p += 2
-
+    # --- Correct segwit detection per spec ---
+    segwit = False
+    vin_cnt, p = read_varint_at(p)
+    if vin_cnt is None: return None, False, 0, 0, None
+    if vin_cnt == 0:
+        # marker=0x00 already consumed by varint
+        if p >= n: return None, False, 0, 0, None
+        flags = data[p]; p += 1
+        if flags != 0:
+            segwit = True
             vin_cnt, p = read_varint_at(p)
-            if vin_cnt is None or vin_cnt < 1 or not _is_reasonable_count(vin_cnt, MAX_INPUTS):
-                return None, False, 0, 0, None
+            if vin_cnt is None: return None, False, 0, 0, None
+        else:
+            # 0 inputs and flags==0 is invalid
+            return None, False, 0, 0, None
 
-            if require_coinbase:
-                if p + 36 > n: return None, False, 0, 0, None
-                prev_hash = data[p:p+32]; p += 32
-                vout = int.from_bytes(data[p:p+4], "little"); p += 4
-                if prev_hash != b"\x00"*32 or vout != 0xffffffff:
-                    return None, False, 0, 0, None
+    # sanity on input count
+    if vin_cnt < 1 or vin_cnt > MAX_INPUTS:
+        return None, False, 0, 0, None
 
-                cscript, p2 = read_varbytes_at(p)
-                if cscript is None or not _is_reasonable_size(len(cscript), MAX_SCRIPT):
-                    return None, False, 0, 0, None
-                ok_h, val = parse_bip34_height(cscript)
-                if not ok_h or val != height:
-                    return None, False, 0, 0, None
-                p = p2
-
-                if p + 4 > n: return None, False, 0, 0, None  # sequence
-                p += 4
-
-                # extra coinbase inputs (rare)
-                for _ in range(max(0, vin_cnt - 1)):
-                    if p + 36 > n: return None, False, 0, 0, None
-                    p += 36
-                    scr, p = read_varbytes_at(p)
-                    if scr is None or not _is_reasonable_size(len(scr), MAX_SCRIPT):
-                        return None, False, 0, 0, None
-                    if p + 4 > n: return None, False, 0, 0, None
-                    p += 4
-            else:
-                for _ in range(vin_cnt):
-                    if p + 36 > n: return None, False, 0, 0, None
-                    p += 36
-                    scr, p = read_varbytes_at(p)
-                    if scr is None or not _is_reasonable_size(len(scr), MAX_SCRIPT):
-                        return None, False, 0, 0, None
-                    if p + 4 > n: return None, False, 0, 0, None
-                    p += 4
-
-            vout_cnt, p = read_varint_at(p)
-            if vout_cnt is None or not _is_reasonable_count(vout_cnt, MAX_OUTPUTS):
-                return None, False, 0, 0, None
-
-            outputs = []
-            for _ in range(vout_cnt):
-                if p + 8 > n: return None, False, 0, 0, None
-                p += 8
-                spk, p = read_varbytes_at(p)
-                if spk is None or not _is_reasonable_size(len(spk), MAX_SCRIPT):
-                    return None, False, 0, 0, None
-                outputs.append(spk)
-
-            if segwit:
-                q = p
-                for _ in range(vin_cnt):
-                    sc, q = read_varint_at(q)
-                    if sc is None or not _is_reasonable_count(sc, MAX_WIT_STACK):
-                        return None, False, 0, 0, None
-                    for __ in range(sc):
-                        item, q = read_varbytes_at(q)
-                        if item is None or not _is_reasonable_size(len(item), MAX_SCRIPT):
-                            return None, False, 0, 0, None
-                p = q
-
-            if p + 4 > n: return None, False, 0, 0, None  # locktime
+    # --- inputs ---
+    if require_coinbase:
+        # first input must be coinbase prevout (32x00, vout=0xffffffff)
+        if p + 36 > n: return None, False, 0, 0, None
+        prev_hash = data[p:p+32]; p += 32
+        vout = int.from_bytes(data[p:p+4], "little"); p += 4
+        if prev_hash != b"\x00"*32 or vout != 0xffffffff:
+            return None, False, 0, 0, None
+        script, p2 = read_varbytes_at(p)
+        if script is None or len(script) > MAX_SCRIPT: return None, False, 0, 0, None
+        ok_h, val = parse_bip34_height(script)
+        if not ok_h or val != height: return None, False, 0, 0, None
+        p = p2
+        if p + 4 > n: return None, False, 0, 0, None  # sequence
+        p += 4
+        # allow extra coinbase inputs if present
+        for _ in range(max(0, vin_cnt - 1)):
+            if p + 36 > n: return None, False, 0, 0, None
+            p += 36
+            scr, p = read_varbytes_at(p)
+            if scr is None or len(scr) > MAX_SCRIPT: return None, False, 0, 0, None
+            if p + 4 > n: return None, False, 0, 0, None
             p += 4
-            return p, segwit, vin_cnt, vout_cnt, outputs
+    else:
+        for _ in range(vin_cnt):
+            if p + 36 > n: return None, False, 0, 0, None
+            p += 36
+            scr, p = read_varbytes_at(p)
+            if scr is None or len(scr) > MAX_SCRIPT: return None, False, 0, 0, None
+            if p + 4 > n: return None, False, 0, 0, None
+            p += 4
+
+    # --- outputs ---
+    vout_cnt, p = read_varint_at(p)
+    if vout_cnt is None or vout_cnt > MAX_OUTPUTS:
+        return None, False, 0, 0, None
+
+    outputs = []
+    for _ in range(vout_cnt):
+        if p + 8 > n: return None, False, 0, 0, None  # value
+        p += 8
+        spk, p = read_varbytes_at(p)
+        if spk is None or len(spk) > MAX_SCRIPT: return None, False, 0, 0, None
+        outputs.append(spk)
+
+    # --- witness (only if segwit) ---
+    if segwit:
+        q = p
+        for _ in range(vin_cnt):
+            wcnt, q = read_varint_at(q)
+            if wcnt is None or wcnt > MAX_WIT_STACK: return None, False, 0, 0, None
+            for __ in range(wcnt):
+                item, q = read_varbytes_at(q)
+                if item is None or len(item) > MAX_SCRIPT: return None, False, 0, 0, None
+        p = q
+
+    # --- locktime ---
+    if p + 4 > n: return None, False, 0, 0, None
+    p += 4
+    return p, segwit, vin_cnt, vout_cnt, outputs
 
         def has_sw_commitment(outputs):
             # OP_RETURN 0x24 aa21a9ed ...
