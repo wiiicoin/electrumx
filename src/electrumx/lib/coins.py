@@ -524,43 +524,51 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     @classmethod
     def block_header(cls, raw_block: bytes, height: int) -> bytes:
         """
-        Return the full header (80 bytes + AuxPoW) by scanning for the
-        first plausible transaction boundary starting at/after byte 80.
+        Return the full header (80 + AuxPoW) by scanning forward from the
+        AuxPoW-deserialized header end until we hit a plausible
+        [varint tx_count][tx version][(optional 00 01)] boundary.
         """
         data = raw_block
         n = len(data)
-        i = 80  # base header size
-        # Search up to the first ~64 KB after the base header for safety
-        limit = min(n - 10, 80 + 65536)
 
+        # First, let the AuxPoW deserializer give its best header length.
+        try:
+            base_header = DeserializerAuxPow(raw_block).read_header(cls.BASIC_HEADER_SIZE)
+            start = len(base_header)
+        except Exception:
+            # Fallback to 80 if AuxPoW reader throws for this block
+            start = 80
+
+        # Helpers to peek compactsize varints
         def read_varint_at(off):
             if off >= n:
                 return None, off
-            b = data[off]
-            if b < 0xfd:
-                return b, off + 1
-            if b == 0xfd:
+            b0 = data[off]
+            if b0 < 0xfd:
+                return b0, off + 1
+            if b0 == 0xfd:
                 if off + 3 > n: return None, off
-                return int.from_bytes(data[off+1:off+3], 'little'), off + 3
-            if b == 0xfe:
+                return int.from_bytes(data[off+1:off+3], "little"), off + 3
+            if b0 == 0xfe:
                 if off + 5 > n: return None, off
-                return int.from_bytes(data[off+1:off+5], 'little'), off + 5
+                return int.from_bytes(data[off+1:off+5], "little"), off + 5
             # 0xff
             if off + 9 > n: return None, off
-            return int.from_bytes(data[off+1:off+9], 'little'), off + 9
+            return int.from_bytes(data[off+1:off+9], "little"), off + 9
 
+        # Scan forward for a sane boundary
+        i = max(80, start)
+        limit = min(n - 10, i + 131072)   # scan up to +128 KiB
         while i < limit:
             tx_count, j = read_varint_at(i)
             if tx_count is None or tx_count == 0 or tx_count > 500000:
                 i += 1
                 continue
 
-            # Expect a 4-byte tx version next
+            # Version should be small (1..3 usually)
             if j + 4 > n:
                 break
-            version = int.from_bytes(data[j:j+4], 'little')
-
-            # Basic sanity: versions are small ints (1..3 usually)
+            version = int.from_bytes(data[j:j+4], "little")
             if version not in (1, 2, 3):
                 i += 1
                 continue
@@ -569,26 +577,20 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             if k + 2 > n:
                 break
 
-            # Two valid cases:
-            #  (a) segwit marker/flag 00 01
-            #  (b) legacy: a compactsize input count (not 0x00 as marker)
-            is_segwit = (data[k] == 0x00 and data[k+1] == 0x01)
-
-            if is_segwit:
-                # Looks like a legit boundary: [varint tx_count][version][00 01]
+            # SegWit case: marker/flag 00 01
+            if data[k] == 0x00 and data[k+1] == 0x01:
+                # Looks like [varint count][version][00 01] -> good
                 return data[:i]
-            else:
-                # Legacy path: next byte is first varint of input count
-                # Quick sanity: it shouldn't be 0x00 (invalid as compactsize),
-                # and shouldn't claim absurdly huge counts.
-                input_cnt, _ = read_varint_at(k)
-                if input_cnt is not None and 1 <= input_cnt <= 100000:
-                    return data[:i]
+
+            # Legacy case: expect a compactsize input count (not 0x00)
+            input_cnt, _ = read_varint_at(k)
+            if input_cnt is not None and 1 <= input_cnt <= 100000:
+                return data[:i]
 
             i += 1
 
-        # Fallback: if we didn't detect, assume non-AuxPoW (80-byte header)
-        return data[:80]
+        # Fallback if nothing matched
+        return data[:start]
 
     # Safe starters; you can tune later
     
