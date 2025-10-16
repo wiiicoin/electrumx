@@ -522,11 +522,76 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     # (e.g., AuxPowMixin, ScryptMixin, etc.) and/or override header methods as needed.
     # --- key fix: always parse block headers with AuxPoW reader ---
     @classmethod
-    def block_header(cls, block: bytes, height: int):
-        # Some AuxPoW forks *don’t* set the usual AUXPOW flag bit in nVersion.
-        # Force AuxPoW-style header parsing so the tx offset is correct.
-        return DeserializerAuxPow(block).read_header(cls.BASIC_HEADER_SIZE)
+    def block_header(cls, raw_block: bytes, height: int) -> bytes:
+        """
+        Return the full header (80 bytes + AuxPoW) by scanning for the
+        first plausible transaction boundary starting at/after byte 80.
+        """
+        data = raw_block
+        n = len(data)
+        i = 80  # base header size
+        # Search up to the first ~64 KB after the base header for safety
+        limit = min(n - 10, 80 + 65536)
 
+        def read_varint_at(off):
+            if off >= n:
+                return None, off
+            b = data[off]
+            if b < 0xfd:
+                return b, off + 1
+            if b == 0xfd:
+                if off + 3 > n: return None, off
+                return int.from_bytes(data[off+1:off+3], 'little'), off + 3
+            if b == 0xfe:
+                if off + 5 > n: return None, off
+                return int.from_bytes(data[off+1:off+5], 'little'), off + 5
+            # 0xff
+            if off + 9 > n: return None, off
+            return int.from_bytes(data[off+1:off+9], 'little'), off + 9
+
+        while i < limit:
+            tx_count, j = read_varint_at(i)
+            if tx_count is None or tx_count == 0 or tx_count > 500000:
+                i += 1
+                continue
+
+            # Expect a 4-byte tx version next
+            if j + 4 > n:
+                break
+            version = int.from_bytes(data[j:j+4], 'little')
+
+            # Basic sanity: versions are small ints (1..3 usually)
+            if version not in (1, 2, 3):
+                i += 1
+                continue
+
+            k = j + 4  # after version
+            if k + 2 > n:
+                break
+
+            # Two valid cases:
+            #  (a) segwit marker/flag 00 01
+            #  (b) legacy: a compactsize input count (not 0x00 as marker)
+            is_segwit = (data[k] == 0x00 and data[k+1] == 0x01)
+
+            if is_segwit:
+                # Looks like a legit boundary: [varint tx_count][version][00 01]
+                return data[:i]
+            else:
+                # Legacy path: next byte is first varint of input count
+                # Quick sanity: it shouldn't be 0x00 (invalid as compactsize),
+                # and shouldn't claim absurdly huge counts.
+                input_cnt, _ = read_varint_at(k)
+                if input_cnt is not None and 1 <= input_cnt <= 100000:
+                    return data[:i]
+
+            i += 1
+
+        # Fallback: if we didn't detect, assume non-AuxPoW (80-byte header)
+        return data[:80]
+
+    # Safe starters; you can tune later
+    
 
 class EquihashMixin:
     STATIC_BLOCK_HEADERS = False
