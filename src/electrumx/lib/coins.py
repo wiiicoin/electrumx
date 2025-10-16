@@ -514,6 +514,10 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     TX_COUNT = 1
     TX_COUNT_HEIGHT = 1
     TX_PER_BLOCK = 1
+    MAX_INPUTS = 1_000_000
+    MAX_OUTPUTS = 1_000_000
+    MAX_SCRIPT = 100_000      # per script/witness item
+    MAX_WIT_STACK = 100_000   # per input witness items
 
     # If Wiiicoin has long reorg risk, adjust this:
     REORG_LIMIT = 200
@@ -564,63 +568,59 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             return False, None
 
         def parse_tx_at(off, require_coinbase=False):
-            """
-            Parse one transaction starting at 'off'.
-            If require_coinbase=True, enforce coinbase prevout + BIP34(height).
-            Returns (end_offset, is_segwit, vin_cnt, vout_cnt, outputs) or (None, False, 0, 0, None) on failure.
-            """
             p = off
             if p + 4 > n: return None, False, 0, 0, None
             p += 4  # version
 
-            # Optional segwit marker/flag
+            # Optional segwit marker/flag: only treat as segwit if 00 01
             segwit = False
             if p + 2 <= n and data[p] == 0x00 and data[p+1] == 0x01:
                 segwit = True
                 p += 2
 
-            # vin
             vin_cnt, p = read_varint_at(p)
-            if vin_cnt is None or vin_cnt < 1 or vin_cnt > 1_000_000: return None, False, 0, 0, None
+            if vin_cnt is None or vin_cnt < 1 or not _is_reasonable_count(vin_cnt, MAX_INPUTS):
+                return None, False, 0, 0, None
 
             if require_coinbase:
-                # vin[0] must be coinbase: prev_hash=0*32, vout=0xffffffff
                 if p + 36 > n: return None, False, 0, 0, None
                 prev_hash = data[p:p+32]; p += 32
                 vout = int.from_bytes(data[p:p+4], "little"); p += 4
                 if prev_hash != b"\x00"*32 or vout != 0xffffffff:
                     return None, False, 0, 0, None
-                # coinbase script must carry BIP34 height == height
+
                 cscript, p2 = read_varbytes_at(p)
-                if cscript is None: return None, False, 0, 0, None
+                if cscript is None or not _is_reasonable_size(len(cscript), MAX_SCRIPT):
+                    return None, False, 0, 0, None
                 ok_h, val = parse_bip34_height(cscript)
                 if not ok_h or val != height:
                     return None, False, 0, 0, None
                 p = p2
-                # sequence
-                if p + 4 > n: return None, False, 0, 0, None
+
+                if p + 4 > n: return None, False, 0, 0, None  # sequence
                 p += 4
-                # any additional inputs (rare)
+
+                # extra coinbase inputs (rare)
                 for _ in range(max(0, vin_cnt - 1)):
                     if p + 36 > n: return None, False, 0, 0, None
                     p += 36
                     scr, p = read_varbytes_at(p)
-                    if scr is None: return None, False, 0, 0, None
+                    if scr is None or not _is_reasonable_size(len(scr), MAX_SCRIPT):
+                        return None, False, 0, 0, None
                     if p + 4 > n: return None, False, 0, 0, None
                     p += 4
             else:
-                # general inputs
                 for _ in range(vin_cnt):
                     if p + 36 > n: return None, False, 0, 0, None
                     p += 36
                     scr, p = read_varbytes_at(p)
-                    if scr is None: return None, False, 0, 0, None
+                    if scr is None or not _is_reasonable_size(len(scr), MAX_SCRIPT):
+                        return None, False, 0, 0, None
                     if p + 4 > n: return None, False, 0, 0, None
                     p += 4
 
-            # vout
             vout_cnt, p = read_varint_at(p)
-            if vout_cnt is None or vout_cnt < 0 or vout_cnt > 1_000_000:
+            if vout_cnt is None or not _is_reasonable_count(vout_cnt, MAX_OUTPUTS):
                 return None, False, 0, 0, None
 
             outputs = []
@@ -628,18 +628,20 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                 if p + 8 > n: return None, False, 0, 0, None
                 p += 8
                 spk, p = read_varbytes_at(p)
-                if spk is None: return None, False, 0, 0, None
+                if spk is None or not _is_reasonable_size(len(spk), MAX_SCRIPT):
+                    return None, False, 0, 0, None
                 outputs.append(spk)
 
-            # segwit witnesses
             if segwit:
                 q = p
                 for _ in range(vin_cnt):
                     sc, q = read_varint_at(q)
-                    if sc is None or sc > 100_000: return None, False, 0, 0, None
+                    if sc is None or not _is_reasonable_count(sc, MAX_WIT_STACK):
+                        return None, False, 0, 0, None
                     for __ in range(sc):
                         item, q = read_varbytes_at(q)
-                        if item is None: return None, False, 0, 0, None
+                        if item is None or not _is_reasonable_size(len(item), MAX_SCRIPT):
+                            return None, False, 0, 0, None
                 p = q
 
             if p + 4 > n: return None, False, 0, 0, None  # locktime
@@ -653,32 +655,31 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                     return True
             return False
 
+        def _is_reasonable_count(x, cap):
+            return 0 <= x <= cap
+
+        def _is_reasonable_size(x, cap):
+            return 0 <= x <= cap
+
+        # --- REPLACE YOUR parses_full_block_at WITH THIS STRICT VERSION ---
         def parses_full_block_at(cand):
             """
-            Given candidate header end 'cand', verify the entire block:
-              - read tx_count,
-              - coinbase at first tx with BIP34 height match,
-              - parse remaining txs,
-              - ensure end aligns with the end of raw bytes (allow trailing zero pads).
-            Prefer (but do not require) a SegWit commitment in the coinbase.
+            Verify a header boundary at 'cand' by parsing **all** transactions and
+            requiring the parser to end at EXACT end-of-bytes (no trailing pads).
             """
             txc, j = read_varint_at(cand)
-            if txc is None or txc == 0 or txc > 2_000_000:
+            if txc is None or txc == 0 or not _is_reasonable_count(txc, 2_000_000):
                 return False
 
-            # tx0 must be our coinbase (BIP34 height == height)
+            # tx0 must be a coinbase with BIP34 height == 'height'
             end0, segw0, vin0, vout0, outs0 = parse_tx_at(j, require_coinbase=True)
             if end0 is None:
                 return False
 
-            # DO NOT require a SegWit commitment (blocks without witness txs may omit it)
-            # We keep this as a soft preference only.
-            # if not has_sw_commitment(outs0):
-            #     return False
-
+            # (SegWit commitment optional; do NOT require)
             p = end0
 
-            # parse the rest (txc - 1)
+            # Parse remaining transactions
             for _ in range(txc - 1):
                 res = parse_tx_at(p, require_coinbase=False)
                 endp = res[0]
@@ -686,16 +687,11 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                     return False
                 p = endp
 
-            # allow exact end or trailing zeros only
-            if p == n:
-                return True
-            k = p
-            while k < n and data[k] == 0x00:
-                k += 1
-            return k == n
+            # STRICT: must end EXACTLY at the end of the block
+            return p == n
 
         # 2) Try small paddings first (covers sporadic pad bytes after AuxPoW)
-        for k in range(0, 65):   # 0..64 bytes past AuxPoW
+        for k in range(0, 129):   # 0..64 bytes past AuxPoW
             cand = aux_end + k
             if cand >= n - 10:
                 break
