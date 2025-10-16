@@ -527,6 +527,19 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     # --- key fix: always parse block headers with AuxPoW reader ---
     @classmethod
     def block_header(cls, raw_block: bytes, height: int) -> bytes:
+        
+        # --- caps used by helper parsers (must be in this scope!) ---
+        MAX_INPUTS   = 1_000_000
+        MAX_OUTPUTS  = 1_000_000
+        MAX_SCRIPT   = 100_000      # per scriptSig/scriptPubKey/witness item
+        MAX_WIT_STACK = 100_000     # max witness stack items per input
+
+        # ... then your helpers:
+        # def _is_reasonable_count(x, cap): ...
+        # def _is_reasonable_size(x, cap): ...
+        # def read_varint_at(...), read_varbytes_at(...), parse_bip34_height(...),
+        # def parse_tx_at(...), def parses_full_block_at(...), etc.
+        
         data = raw_block
         n = len(data)
 
