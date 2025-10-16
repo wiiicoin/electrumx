@@ -42,11 +42,10 @@ from electrumx.lib.hash import Base58, double_sha256, hash_to_hex_str
 from electrumx.lib.hash import HASHX_LEN, hex_str_to_hash
 from electrumx.lib.script import (_match_ops, Script, ScriptError,
                                   ScriptPubKey, OpCodes)
-from electrumx.lib.coins_wiiicoin import Wiiicoin
 import electrumx.lib.tx as lib_tx
 from electrumx.lib import tx as lib_tx
 
-from electrumx.lib.tx import Tx
+from electrumx.lib.tx import Tx, DeserializerSegWit
 import electrumx.lib.tx_dash as lib_tx_dash
 import electrumx.lib.tx_axe as lib_tx_axe
 import electrumx.server.block_processor as block_proc
@@ -362,6 +361,25 @@ class Bitcoin(BitcoinMixin, Coin):
         if n <= 1008:
             return n // 24 * 24
         return 1008
+
+class Wiiicoin(Bitcoin):
+
+    NAME = "Wiiicoin"
+    SHORTNAME = "WIII"
+    NET = "mainnet"  # change to "testnet" for testnet class if needed
+    DESERIALIZER = DeserializerSegWit
+
+    # Heuristics for mempool/throughput estimates; safe conservative defaults:
+    TX_COUNT = 1
+    TX_COUNT_HEIGHT = 1
+    TX_PER_BLOCK = 1
+
+    # If Wiiicoin has long reorg risk, adjust this:
+    REORG_LIMIT = 200
+
+    # If Wiiicoin differs from Bitcoin headers (e.g., AuxPoW), inherit from the right base
+    # (e.g., AuxPowMixin, ScryptMixin, etc.) and/or override header methods.
+
 
 class Litecoin(Coin):
     NAME = "Litecoin"
