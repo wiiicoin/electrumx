@@ -44,7 +44,6 @@ from electrumx.lib.script import (_match_ops, Script, ScriptError,
                                   ScriptPubKey, OpCodes)
 import electrumx.lib.tx as lib_tx
 from electrumx.lib import tx as lib_tx
-from electrumx.lib.coins import AuxPowMixin
 from electrumx.lib.tx import Tx, DeserializerSegWit
 import electrumx.lib.tx_dash as lib_tx_dash
 import electrumx.lib.tx_axe as lib_tx_axe
@@ -362,26 +361,6 @@ class Bitcoin(BitcoinMixin, Coin):
             return n // 24 * 24
         return 1008
 
-class Wiiicoin(AuxPowMixin, Bitcoin):
-
-    NAME = "Wiiicoin"
-    SHORTNAME = "WIII"
-    NET = "main"  # change to "testnet" for testnet class if needed
-    GENESIS_HASH = ('f23121461d59dbeb43645ed7c9600409de3c49a8225eee8e9d74d42fff4f354a')
-    DESERIALIZER = DeserializerSegWit
-
-    # Heuristics for mempool/throughput estimates; safe conservative defaults:
-    TX_COUNT = 1
-    TX_COUNT_HEIGHT = 1
-    TX_PER_BLOCK = 1
-
-    # If Wiiicoin has long reorg risk, adjust this:
-    REORG_LIMIT = 200
-
-    # If Wiiicoin differs from Bitcoin headers (e.g., AuxPoW), inherit from the right base
-    # (e.g., AuxPowMixin, ScryptMixin, etc.) and/or override header methods.
-
-
 class Litecoin(Coin):
     NAME = "Litecoin"
     SHORTNAME = "LTC"
@@ -518,6 +497,24 @@ class AuxPowMixin:
         deserializer = cls.DESERIALIZER(block)
         return deserializer.read_header(cls.BASIC_HEADER_SIZE)
 
+class Wiiicoin(AuxPowMixin, Bitcoin):
+    
+    NAME = "Wiiicoin"
+    SHORTNAME = "WIII"
+    NET = "main"  # change to "testnet" for testnet class if needed
+    GENESIS_HASH = ('f23121461d59dbeb43645ed7c9600409de3c49a8225eee8e9d74d42fff4f354a')
+    DESERIALIZER = DeserializerSegWit
+
+    # Heuristics for mempool/throughput estimates; safe conservative defaults:
+    TX_COUNT = 1
+    TX_COUNT_HEIGHT = 1
+    TX_PER_BLOCK = 1
+
+    # If Wiiicoin has long reorg risk, adjust this:
+    REORG_LIMIT = 200
+
+    # If Wiiicoin differs from Bitcoin headers (e.g., AuxPoW), inherit from the right base
+    # (e.g., AuxPowMixin, ScryptMixin, etc.) and/or override header methods.
 
 class EquihashMixin:
     STATIC_BLOCK_HEADERS = False
@@ -681,6 +678,7 @@ class NameMixin:
                 n += dlen
 
         return n
+
 
 
 class NameIndexMixin(NameMixin):
