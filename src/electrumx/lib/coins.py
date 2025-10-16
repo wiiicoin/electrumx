@@ -523,29 +523,19 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     # --- key fix: always parse block headers with AuxPoW reader ---
     @classmethod
     def block_header(cls, raw_block: bytes, height: int) -> bytes:
-        """
-        Find the true header end (80 + AuxPoW + any padding) by locating the
-        *real* coinbase transaction:
-          - version (any 32-bit)
-          - optional segwit marker 00 01
-          - vin[0] is coinbase (prev_hash = 0x00*32, vout = 0xffffffff)
-          - BIP34 height in coinbase script equals `height`
-        """
         data = raw_block
         n = len(data)
 
-        # 1) AuxPoW’s best guess; fallback to 80
+        # AuxPoW’s header-length guess; fallback to 80
         try:
             aux_end = len(DeserializerAuxPow(raw_block).read_header(cls.BASIC_HEADER_SIZE))
         except Exception:
             aux_end = 80
 
-        # ---- helpers ---------------------------------------------------------
         def read_varint_at(off):
             if off >= n: return None, off
             b0 = data[off]
-            if b0 < 0xfd:
-                return b0, off + 1
+            if b0 < 0xfd:  return b0, off + 1
             if b0 == 0xfd:
                 if off + 3 > n: return None, off
                 return int.from_bytes(data[off+1:off+3], "little"), off + 3
@@ -561,59 +551,55 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             return data[p:p+ln], p + ln
 
         def parse_bip34_height(cscript: bytes):
-            """Return (ok, value) where ok=True only if script begins with minimal push of the block height."""
-            if not cscript:
-                return False, None
+            # Minimal push of height; 1..5 bytes is plenty for these heights
+            if not cscript: return False, None
             op = cscript[0]
             if 1 <= op <= 5 and 1 + op <= len(cscript):
                 val = int.from_bytes(cscript[1:1+op], "little")
-                # Minimal encoding check: no leading zero unless value==0
-                if op == 1 or (val >> (8*(op-1))):
+                if op == 1 or (val >> (8*(op-1))):  # minimal
                     return True, val
             return False, None
 
+        def has_sw_commitment(outputs):
+            # True if any output script begins with OP_RETURN + 0x24 + 'aa21a9ed'
+            # i.e. b'\x6a\x24\xaa\x21\xa9\xed'
+            for spk in outputs:
+                if len(spk) >= 6 and spk[:6] == b"\x6a\x24\xaa\x21\xa9\xed":
+                    return True
+            return False
+
         def parses_coinbase_tx(off):
-            """
-            Parse ONE tx at 'off' and verify it's our coinbase:
-              - prevout = 00..00/0xffffffff
-              - BIP34 height == `height`
-            Return end offset if OK; else None.
-            """
+            """Return end offset if a valid Wiiicoin coinbase tx starts at 'off'."""
             p = off
             if p + 4 > n: return None
-            p += 4  # version (accept any 32-bit)
+            p += 4  # version
 
-            # optional segwit 00 01
+            # optional segwit marker/flag
             segwit = False
             if p + 2 <= n and data[p] == 0x00 and data[p+1] == 0x01:
                 segwit = True
                 p += 2
 
-            # vin
             vin_cnt, p = read_varint_at(p)
-            if vin_cnt is None or vin_cnt < 1 or vin_cnt > 1_000_000:
-                return None
+            if vin_cnt is None or vin_cnt < 1 or vin_cnt > 1_000_000: return None
 
-            # vin[0] must be coinbase
+            # first input must be coinbase
             if p + 36 > n: return None
             prev_hash = data[p:p+32]; p += 32
             vout = int.from_bytes(data[p:p+4], "little"); p += 4
-            if prev_hash != b"\x00"*32 or vout != 0xffffffff:
-                return None
+            if prev_hash != b"\x00"*32 or vout != 0xffffffff: return None
 
-            # coinbase script must carry BIP34 height == height
+            # coinbase script must contain BIP34 height == 'height'
             cscript, p2 = read_varbytes_at(p)
             if cscript is None: return None
             ok_h, val = parse_bip34_height(cscript)
-            if not ok_h or val != height:
-                return None
+            if not ok_h or val != height: return None
             p = p2
 
-            # sequence
-            if p + 4 > n: return None
+            if p + 4 > n: return None  # sequence
             p += 4
 
-            # If there are extra inputs (rare), bounds-check them
+            # Any additional inputs (unlikely), but keep bounds checks
             for _ in range(max(0, vin_cnt - 1)):
                 if p + 36 > n: return None
                 p += 36
@@ -622,17 +608,21 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                 if p + 4 > n: return None
                 p += 4
 
-            # vout
             vout_cnt, p = read_varint_at(p)
-            if vout_cnt is None or vout_cnt < 1 or vout_cnt > 1_000_000:
-                return None
+            if vout_cnt is None or vout_cnt < 1 or vout_cnt > 1_000_000: return None
+
+            outputs = []
             for _ in range(vout_cnt):
                 if p + 8 > n: return None  # value
                 p += 8
                 spk, p = read_varbytes_at(p)
                 if spk is None: return None
+                outputs.append(spk)
 
-            # segwit witnesses
+            # SegWit commitment OP_RETURN is present in your samples; require it to avoid AuxPoW hits
+            if not has_sw_commitment(outputs):
+                return None
+
             if segwit:
                 q = p
                 for _ in range(vin_cnt):
@@ -643,13 +633,12 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                         if item is None: return None
                 p = q
 
-            # locktime
-            if p + 4 > n: return None
+            if p + 4 > n: return None  # locktime
             p += 4
             return p
 
-        # 2) Try small paddings first: aux_end + k (covers the stray/intermittent pad byte)
-        for k in range(0, 9):
+        # Try small paddings first (covers the stray 0x01 / small junk): aux_end + 0..64
+        for k in range(0, 65):
             cand = aux_end + k
             if cand >= n - 10: break
             txc, j = read_varint_at(cand)
@@ -659,9 +648,9 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             if end0 is not None:
                 return data[:cand]
 
-        # 3) Wider scan (last resort)
+        # Wider scan (last resort): up to +1.5 MiB from aux_end
         i = max(80, aux_end)
-        limit = min(n - 10, i + 1_572_864)  # +1.5 MiB
+        limit = min(n - 10, i + 1_572_864)
         while i < limit:
             txc, j = read_varint_at(i)
             if txc is None or txc == 0 or txc > 1_000_000:
@@ -671,7 +660,7 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                 return data[:i]
             i += 1
 
-        # 4) Fallback
+        # Fallback
         return data[:aux_end]
 
 
