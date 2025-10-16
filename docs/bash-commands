@@ -4,4 +4,7 @@ sudo systemctl stop systemd-journald
 sudo rm -rf /var/log/journal/*
 sudo systemctl start systemd-journald
 
-
+#Stop reinstall electrumx
+systemctl stop electrumx.service 
+(venv) root@wiiiLon001:/opt/electrumx# sudo rm -rf /var/lib/electrumx/*
+(venv) root@wiiiLon001:/opt/electrumx# pip install git+https://github.com/wiiicoin/electrumx.git --force-reinstall
