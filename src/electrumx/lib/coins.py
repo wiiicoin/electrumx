@@ -524,14 +524,13 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     @classmethod
     def block_header(cls, raw_block: bytes, height: int) -> bytes:
         """
-        Return the full header (80 + AuxPoW) by scanning forward until we can
-        minimally parse the FIRST tx (legacy or SegWit) without overruns.
-        This avoids guessing AuxPoW length.
+        Return the full header (80 + AuxPoW) by scanning forward from the
+        AuxPoW-reported end until a whole first transaction parses (SegWit or legacy).
         """
         data = raw_block
         n = len(data)
 
-        # 1) Start with AuxPoW's idea of the header end; fall back to 80 on error
+        # 1) Let AuxPoW deserializer guess header length; fall back to 80 on error
         try:
             aux_end = len(DeserializerAuxPow(raw_block).read_header(cls.BASIC_HEADER_SIZE))
         except Exception:
@@ -557,20 +556,18 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             if ln is None or p + ln > n: return None, off
             return data[p:p+ln], p + ln
 
-        def looks_like_first_tx(off):
+        def parse_first_tx(off):
             """
-            Strict, bounds-checked parse of a single tx:
-            version, [00 01], vin, first input, vout, first output, [witness], locktime.
-            Returns end offset if OK; None otherwise.
+            Strict, bounds-checked parse of ONE tx starting at off.
+            Supports SegWit marker/flag. Returns end offset if OK; else None.
             """
             p = off
             # version (4 bytes)
             if p + 4 > n: return None
-            version = int.from_bytes(data[p:p+4], "little"); p += 4
-            if version not in (1, 2, 3, 4):  # be slightly tolerant
-                return None
+            # accept any 32-bit version; don't filter
+            p += 4
 
-            # SegWit marker+flag?
+            # optional segwit marker/flag 00 01
             segwit = False
             if p + 2 <= n and data[p] == 0x00 and data[p+1] == 0x01:
                 segwit = True
@@ -578,33 +575,50 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
 
             # vin
             vin_cnt, p = read_varint_at(p)
-            if vin_cnt is None or vin_cnt < 1 or vin_cnt > 100000: return None
+            if vin_cnt is None or vin_cnt < 1 or vin_cnt > 200000: return None
 
-            # first input (prevout 36, script, sequence 4)
-            if p + 36 > n: return None
-            p += 36  # prev_txid (32) + vout (4)
-            script, p = read_varbytes_at(p)
-            if script is None: return None
-            if p + 4 > n: return None
-            p += 4  # nSequence
+            # each input: prevout(36) + script + nSequence(4)
+            for _ in range(min(vin_cnt, 8)):  # fully validate first few; enough to find boundary
+                if p + 36 > n: return None
+                p += 36
+                scr, p = read_varbytes_at(p)
+                if scr is None: return None
+                if p + 4 > n: return None
+                p += 4
+
+            # If many inputs, do a cheap skip for the rest (still bounds-checked)
+            for _ in range(max(0, vin_cnt - 8)):
+                if p + 36 > n: return None
+                p += 36
+                ln_off = p
+                ln, p2 = read_varint_at(ln_off)
+                if ln is None or p2 + ln + 4 > n: return None
+                p = p2 + ln + 4
 
             # vout
             vout_cnt, p = read_varint_at(p)
-            if vout_cnt is None or vout_cnt < 1 or vout_cnt > 100000: return None
+            if vout_cnt is None or vout_cnt < 1 or vout_cnt > 200000: return None
 
-            # first output (value 8, scriptpubkey)
-            if p + 8 > n: return None
-            p += 8  # value
-            spk, p = read_varbytes_at(p)
-            if spk is None: return None
+            # outputs: value(8) + scriptpubkey
+            for _ in range(min(vout_cnt, 8)):
+                if p + 8 > n: return None
+                p += 8
+                spk, p = read_varbytes_at(p)
+                if spk is None: return None
+            for _ in range(max(0, vout_cnt - 8)):
+                if p + 8 > n: return None
+                p += 8
+                ln_off = p
+                ln, p2 = read_varint_at(ln_off)
+                if ln is None or p2 + ln > n: return None
+                p = p2 + ln
 
-            # SegWit witness (consume, but don't validate content)
+            # witnesses (for each input): stack_count + items
             if segwit:
-                # For each input: stack_count, then that many varbytes
                 q = p
                 for _ in range(vin_cnt):
                     sc, q = read_varint_at(q)
-                    if sc is None or sc > 1000: return None
+                    if sc is None or sc > 5000: return None
                     for __ in range(sc):
                         item, q = read_varbytes_at(q)
                         if item is None: return None
@@ -613,27 +627,28 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             # locktime
             if p + 4 > n: return None
             p += 4
+            return p
 
-            return p  # end of tx0 if everything was sane
-
-        # 2) Scan for a plausible boundary and validate a whole tx there
+        # 2) Scan for [varint tx_count][tx0] that parses cleanly
         i = max(80, aux_end)
-        limit = min(n - 10, i + 262144)  # scan up to +256 KiB
+        limit = min(n - 10, i + 1048576)  # scan up to +1 MiB
         while i < limit:
-            # Expect tx_count first
             txc, j = read_varint_at(i)
-            if txc is None or txc == 0 or txc > 500000:
+            if txc is None or txc == 0 or txc > 1000000:
                 i += 1; continue
-
-            # Then expect first tx to parse cleanly
-            end0 = looks_like_first_tx(j)
+            end0 = parse_first_tx(j)
             if end0 is not None:
-                return data[:i]  # header ends right before tx_count
-
+                return data[:i]  # header is everything before tx_count
             i += 1
 
-        # 3) Fallback: trust AuxPoW end (last resort)
+        # 3) Fallback: trust AuxPoW boundary if scan failed
         return data[:aux_end]
+
+    # heuristics
+    TX_COUNT = 1
+    TX_COUNT_HEIGHT = 1
+    TX_PER_BLOCK = 1
+    REORG_LIMIT = 200
 
 
     # Safe starters; you can tune later
