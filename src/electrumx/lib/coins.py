@@ -519,7 +519,14 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     REORG_LIMIT = 200
 
     # If Wiiicoin differs from Bitcoin headers (e.g., AuxPoW), inherit from the right base
-    # (e.g., AuxPowMixin, ScryptMixin, etc.) and/or override header methods.
+    # (e.g., AuxPowMixin, ScryptMixin, etc.) and/or override header methods as needed.
+    # --- key fix: always parse block headers with AuxPoW reader ---
+    @classmethod
+    def block_header(cls, block: bytes, height: int):
+        # Some AuxPoW forks *don’t* set the usual AUXPOW flag bit in nVersion.
+        # Force AuxPoW-style header parsing so the tx offset is correct.
+        return DeserializerAuxPow(block).read_header(cls.BASIC_HEADER_SIZE)
+
 
 class EquihashMixin:
     STATIC_BLOCK_HEADERS = False
