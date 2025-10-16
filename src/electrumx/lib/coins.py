@@ -526,16 +526,18 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
         data = raw_block
         n = len(data)
 
-        # AuxPoW’s header-length guess; fallback to 80
+        # 1) AuxPoW’s header length guess; fallback to 80 bytes
         try:
             aux_end = len(DeserializerAuxPow(raw_block).read_header(cls.BASIC_HEADER_SIZE))
         except Exception:
             aux_end = 80
 
+        # ---------------- helpers ----------------
         def read_varint_at(off):
             if off >= n: return None, off
             b0 = data[off]
-            if b0 < 0xfd:  return b0, off + 1
+            if b0 < 0xfd:
+                return b0, off + 1
             if b0 == 0xfd:
                 if off + 3 > n: return None, off
                 return int.from_bytes(data[off+1:off+3], "little"), off + 3
@@ -551,116 +553,159 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             return data[p:p+ln], p + ln
 
         def parse_bip34_height(cscript: bytes):
-            # Minimal push of height; 1..5 bytes is plenty for these heights
-            if not cscript: return False, None
+            # Minimal push (1..5 bytes) at start containing the height.
+            if not cscript:
+                return False, None
             op = cscript[0]
             if 1 <= op <= 5 and 1 + op <= len(cscript):
                 val = int.from_bytes(cscript[1:1+op], "little")
-                if op == 1 or (val >> (8*(op-1))):  # minimal
+                if op == 1 or (val >> (8*(op-1))):  # minimal encoding
                     return True, val
             return False, None
 
-        def has_sw_commitment(outputs):
-            # True if any output script begins with OP_RETURN + 0x24 + 'aa21a9ed'
-            # i.e. b'\x6a\x24\xaa\x21\xa9\xed'
-            for spk in outputs:
-                if len(spk) >= 6 and spk[:6] == b"\x6a\x24\xaa\x21\xa9\xed":
-                    return True
-            return False
-
-        def parses_coinbase_tx(off):
-            """Return end offset if a valid Wiiicoin coinbase tx starts at 'off'."""
+        def parse_tx_at(off, require_coinbase=False):
+            """
+            Parse one transaction starting at 'off'.
+            If require_coinbase=True, enforce coinbase prevout + BIP34(height).
+            Returns (end_offset, is_segwit, vin_cnt, vout_cnt, outputs) or (None, False, 0, 0, None) on failure.
+            """
             p = off
-            if p + 4 > n: return None
+            if p + 4 > n: return None, False, 0, 0, None
             p += 4  # version
 
-            # optional segwit marker/flag
+            # Optional segwit marker/flag
             segwit = False
             if p + 2 <= n and data[p] == 0x00 and data[p+1] == 0x01:
                 segwit = True
                 p += 2
 
+            # vin
             vin_cnt, p = read_varint_at(p)
-            if vin_cnt is None or vin_cnt < 1 or vin_cnt > 1_000_000: return None
+            if vin_cnt is None or vin_cnt < 1 or vin_cnt > 1_000_000: return None, False, 0, 0, None
 
-            # first input must be coinbase
-            if p + 36 > n: return None
-            prev_hash = data[p:p+32]; p += 32
-            vout = int.from_bytes(data[p:p+4], "little"); p += 4
-            if prev_hash != b"\x00"*32 or vout != 0xffffffff: return None
-
-            # coinbase script must contain BIP34 height == 'height'
-            cscript, p2 = read_varbytes_at(p)
-            if cscript is None: return None
-            ok_h, val = parse_bip34_height(cscript)
-            if not ok_h or val != height: return None
-            p = p2
-
-            if p + 4 > n: return None  # sequence
-            p += 4
-
-            # Any additional inputs (unlikely), but keep bounds checks
-            for _ in range(max(0, vin_cnt - 1)):
-                if p + 36 > n: return None
-                p += 36
-                scr, p = read_varbytes_at(p)
-                if scr is None: return None
-                if p + 4 > n: return None
+            if require_coinbase:
+                # vin[0] must be coinbase: prev_hash=0*32, vout=0xffffffff
+                if p + 36 > n: return None, False, 0, 0, None
+                prev_hash = data[p:p+32]; p += 32
+                vout = int.from_bytes(data[p:p+4], "little"); p += 4
+                if prev_hash != b"\x00"*32 or vout != 0xffffffff:
+                    return None, False, 0, 0, None
+                # coinbase script must carry BIP34 height == height
+                cscript, p2 = read_varbytes_at(p)
+                if cscript is None: return None, False, 0, 0, None
+                ok_h, val = parse_bip34_height(cscript)
+                if not ok_h or val != height:
+                    return None, False, 0, 0, None
+                p = p2
+                # sequence
+                if p + 4 > n: return None, False, 0, 0, None
                 p += 4
+                # any additional inputs (rare)
+                for _ in range(max(0, vin_cnt - 1)):
+                    if p + 36 > n: return None, False, 0, 0, None
+                    p += 36
+                    scr, p = read_varbytes_at(p)
+                    if scr is None: return None, False, 0, 0, None
+                    if p + 4 > n: return None, False, 0, 0, None
+                    p += 4
+            else:
+                # general inputs
+                for _ in range(vin_cnt):
+                    if p + 36 > n: return None, False, 0, 0, None
+                    p += 36
+                    scr, p = read_varbytes_at(p)
+                    if scr is None: return None, False, 0, 0, None
+                    if p + 4 > n: return None, False, 0, 0, None
+                    p += 4
 
+            # vout
             vout_cnt, p = read_varint_at(p)
-            if vout_cnt is None or vout_cnt < 1 or vout_cnt > 1_000_000: return None
+            if vout_cnt is None or vout_cnt < 0 or vout_cnt > 1_000_000:
+                return None, False, 0, 0, None
 
             outputs = []
             for _ in range(vout_cnt):
-                if p + 8 > n: return None  # value
+                if p + 8 > n: return None, False, 0, 0, None
                 p += 8
                 spk, p = read_varbytes_at(p)
-                if spk is None: return None
+                if spk is None: return None, False, 0, 0, None
                 outputs.append(spk)
 
-            # SegWit commitment OP_RETURN is present in your samples; require it to avoid AuxPoW hits
-            if not has_sw_commitment(outputs):
-                return None
-
+            # segwit witnesses
             if segwit:
                 q = p
                 for _ in range(vin_cnt):
                     sc, q = read_varint_at(q)
-                    if sc is None or sc > 10_000: return None
+                    if sc is None or sc > 100_000: return None, False, 0, 0, None
                     for __ in range(sc):
                         item, q = read_varbytes_at(q)
-                        if item is None: return None
+                        if item is None: return None, False, 0, 0, None
                 p = q
 
-            if p + 4 > n: return None  # locktime
+            if p + 4 > n: return None, False, 0, 0, None  # locktime
             p += 4
-            return p
+            return p, segwit, vin_cnt, vout_cnt, outputs
 
-        # Try small paddings first (covers the stray 0x01 / small junk): aux_end + 0..64
-        for k in range(0, 65):
-            cand = aux_end + k
-            if cand >= n - 10: break
+        def has_sw_commitment(outputs):
+            # OP_RETURN 0x24 aa21a9ed ...
+            for spk in outputs or []:
+                if len(spk) >= 6 and spk[:6] == b"\x6a\x24\xaa\x21\xa9\xed":
+                    return True
+            return False
+
+        def parses_full_block_at(cand):
+            """
+            Given a candidate header end 'cand', verify the entire block:
+              - read tx_count,
+              - coinbase at first tx with BIP34 height match,
+              - parse remaining txs,
+              - ensure final position == n (or <= n, tolerating trailing 0 pad bytes).
+            Return True if consistent; else False.
+            """
             txc, j = read_varint_at(cand)
-            if txc is None or txc == 0 or txc > 1_000_000:
-                continue
-            end0 = parses_coinbase_tx(j)
-            if end0 is not None:
+            if txc is None or txc == 0 or txc > 2_000_000:
+                return False
+            # tx0 must be our coinbase
+            end0, segw0, vin0, vout0, outs0 = parse_tx_at(j, require_coinbase=True)
+            if end0 is None:
+                return False
+            # (Optional) require segwit commitment in coinbase outputs if present in chain
+            if not has_sw_commitment(outs0):
+                return False
+            p = end0
+            # parse the rest (txc - 1)
+            for _ in range(txc - 1):
+                res = parse_tx_at(p, require_coinbase=False)
+                endp = res[0]
+                if endp is None:
+                    return False
+                p = endp
+            # allow exact end or trailing zeros (rare)
+            if p == n:
+                return True
+            # tolerate padding zeros at the very end
+            k = p
+            while k < n and data[k] == 0x00:
+                k += 1
+            return k == n
+
+        # 2) Try small paddings first (covers sporadic pad bytes after AuxPoW)
+        for k in range(0, 65):   # 0..64 bytes past AuxPoW
+            cand = aux_end + k
+            if cand >= n - 10:
+                break
+            if parses_full_block_at(cand):
                 return data[:cand]
 
-        # Wider scan (last resort): up to +1.5 MiB from aux_end
+        # 3) Wider scan (last resort): up to +1.5 MiB after aux_end
         i = max(80, aux_end)
         limit = min(n - 10, i + 1_572_864)
         while i < limit:
-            txc, j = read_varint_at(i)
-            if txc is None or txc == 0 or txc > 1_000_000:
-                i += 1; continue
-            end0 = parses_coinbase_tx(j)
-            if end0 is not None:
+            if parses_full_block_at(i):
                 return data[:i]
             i += 1
 
-        # Fallback
+        # 4) Fallback if nothing matched (shouldn’t happen with valid blocks)
         return data[:aux_end]
 
 
