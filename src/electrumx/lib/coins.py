@@ -524,25 +524,22 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     @classmethod
     def block_header(cls, raw_block: bytes, height: int) -> bytes:
         """
-        Return the full header (80 + AuxPoW) by scanning forward from the
-        AuxPoW-deserialized header end until we hit a plausible
-        [varint tx_count][tx version][(optional 00 01)] boundary.
+        Return the full header (80 + AuxPoW) by scanning forward until we can
+        minimally parse the FIRST tx (legacy or SegWit) without overruns.
+        This avoids guessing AuxPoW length.
         """
         data = raw_block
         n = len(data)
 
-        # First, let the AuxPoW deserializer give its best header length.
+        # 1) Start with AuxPoW's idea of the header end; fall back to 80 on error
         try:
-            base_header = DeserializerAuxPow(raw_block).read_header(cls.BASIC_HEADER_SIZE)
-            start = len(base_header)
+            aux_end = len(DeserializerAuxPow(raw_block).read_header(cls.BASIC_HEADER_SIZE))
         except Exception:
-            # Fallback to 80 if AuxPoW reader throws for this block
-            start = 80
+            aux_end = 80
 
-        # Helpers to peek compactsize varints
+        # ---- helpers ---------------------------------------------------------
         def read_varint_at(off):
-            if off >= n:
-                return None, off
+            if off >= n: return None, off
             b0 = data[off]
             if b0 < 0xfd:
                 return b0, off + 1
@@ -552,45 +549,92 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             if b0 == 0xfe:
                 if off + 5 > n: return None, off
                 return int.from_bytes(data[off+1:off+5], "little"), off + 5
-            # 0xff
             if off + 9 > n: return None, off
             return int.from_bytes(data[off+1:off+9], "little"), off + 9
 
-        # Scan forward for a sane boundary
-        i = max(80, start)
-        limit = min(n - 10, i + 131072)   # scan up to +128 KiB
+        def read_varbytes_at(off):
+            ln, p = read_varint_at(off)
+            if ln is None or p + ln > n: return None, off
+            return data[p:p+ln], p + ln
+
+        def looks_like_first_tx(off):
+            """
+            Strict, bounds-checked parse of a single tx:
+            version, [00 01], vin, first input, vout, first output, [witness], locktime.
+            Returns end offset if OK; None otherwise.
+            """
+            p = off
+            # version (4 bytes)
+            if p + 4 > n: return None
+            version = int.from_bytes(data[p:p+4], "little"); p += 4
+            if version not in (1, 2, 3, 4):  # be slightly tolerant
+                return None
+
+            # SegWit marker+flag?
+            segwit = False
+            if p + 2 <= n and data[p] == 0x00 and data[p+1] == 0x01:
+                segwit = True
+                p += 2
+
+            # vin
+            vin_cnt, p = read_varint_at(p)
+            if vin_cnt is None or vin_cnt < 1 or vin_cnt > 100000: return None
+
+            # first input (prevout 36, script, sequence 4)
+            if p + 36 > n: return None
+            p += 36  # prev_txid (32) + vout (4)
+            script, p = read_varbytes_at(p)
+            if script is None: return None
+            if p + 4 > n: return None
+            p += 4  # nSequence
+
+            # vout
+            vout_cnt, p = read_varint_at(p)
+            if vout_cnt is None or vout_cnt < 1 or vout_cnt > 100000: return None
+
+            # first output (value 8, scriptpubkey)
+            if p + 8 > n: return None
+            p += 8  # value
+            spk, p = read_varbytes_at(p)
+            if spk is None: return None
+
+            # SegWit witness (consume, but don't validate content)
+            if segwit:
+                # For each input: stack_count, then that many varbytes
+                q = p
+                for _ in range(vin_cnt):
+                    sc, q = read_varint_at(q)
+                    if sc is None or sc > 1000: return None
+                    for __ in range(sc):
+                        item, q = read_varbytes_at(q)
+                        if item is None: return None
+                p = q
+
+            # locktime
+            if p + 4 > n: return None
+            p += 4
+
+            return p  # end of tx0 if everything was sane
+
+        # 2) Scan for a plausible boundary and validate a whole tx there
+        i = max(80, aux_end)
+        limit = min(n - 10, i + 262144)  # scan up to +256 KiB
         while i < limit:
-            tx_count, j = read_varint_at(i)
-            if tx_count is None or tx_count == 0 or tx_count > 500000:
-                i += 1
-                continue
+            # Expect tx_count first
+            txc, j = read_varint_at(i)
+            if txc is None or txc == 0 or txc > 500000:
+                i += 1; continue
 
-            # Version should be small (1..3 usually)
-            if j + 4 > n:
-                break
-            version = int.from_bytes(data[j:j+4], "little")
-            if version not in (1, 2, 3):
-                i += 1
-                continue
-
-            k = j + 4  # after version
-            if k + 2 > n:
-                break
-
-            # SegWit case: marker/flag 00 01
-            if data[k] == 0x00 and data[k+1] == 0x01:
-                # Looks like [varint count][version][00 01] -> good
-                return data[:i]
-
-            # Legacy case: expect a compactsize input count (not 0x00)
-            input_cnt, _ = read_varint_at(k)
-            if input_cnt is not None and 1 <= input_cnt <= 100000:
-                return data[:i]
+            # Then expect first tx to parse cleanly
+            end0 = looks_like_first_tx(j)
+            if end0 is not None:
+                return data[:i]  # header ends right before tx_count
 
             i += 1
 
-        # Fallback if nothing matched
-        return data[:start]
+        # 3) Fallback: trust AuxPoW end (last resort)
+        return data[:aux_end]
+
 
     # Safe starters; you can tune later
     
