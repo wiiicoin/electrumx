@@ -524,13 +524,13 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
     @classmethod
     def block_header(cls, raw_block: bytes, height: int) -> bytes:
         """
-        Return the full header (80 + AuxPoW) by scanning forward from the
-        AuxPoW-reported end until a whole first transaction parses (SegWit or legacy).
+        Return full header (80 + AuxPoW) by scanning forward from the AuxPoW
+        end until a VALID coinbase tx parses (legacy or SegWit).
         """
         data = raw_block
         n = len(data)
 
-        # 1) Let AuxPoW deserializer guess header length; fall back to 80 on error
+        # 1) AuxPoW’s idea of header end; fallback to 80
         try:
             aux_end = len(DeserializerAuxPow(raw_block).read_header(cls.BASIC_HEADER_SIZE))
         except Exception:
@@ -556,18 +556,19 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             if ln is None or p + ln > n: return None, off
             return data[p:p+ln], p + ln
 
-        def parse_first_tx(off):
+        def parses_coinbase_tx(off):
             """
-            Strict, bounds-checked parse of ONE tx starting at off.
-            Supports SegWit marker/flag. Returns end offset if OK; else None.
+            Parse ONE tx and verify it's a coinbase (vin[0].prevout hash=0*32, vout=0xffffffff).
+            Return end offset if OK; else None.
             """
             p = off
-            # version (4 bytes)
             if p + 4 > n: return None
-            # accept any 32-bit version; don't filter
+            version = int.from_bytes(data[p:p+4], "little")
+            if version not in (1, 2, 3, 4):  # sane versions
+                return None
             p += 4
 
-            # optional segwit marker/flag 00 01
+            # optional segwit marker/flag
             segwit = False
             if p + 2 <= n and data[p] == 0x00 and data[p+1] == 0x01:
                 segwit = True
@@ -577,8 +578,26 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             vin_cnt, p = read_varint_at(p)
             if vin_cnt is None or vin_cnt < 1 or vin_cnt > 200000: return None
 
-            # each input: prevout(36) + script + nSequence(4)
-            for _ in range(min(vin_cnt, 8)):  # fully validate first few; enough to find boundary
+            # first input must be coinbase: prev_hash==0*32, vout==0xffffffff
+            if p + 36 > n: return None
+            prev_hash = data[p:p+32]; p += 32
+            vout = int.from_bytes(data[p:p+4], "little"); p += 4
+            if prev_hash != b"\x00"*32 or vout != 0xffffffff:
+                return None
+
+            # coinbase script
+            cscript, p = read_varbytes_at(p)
+            if cscript is None: return None
+            # allow wide range but not absurd: 2..1,000,000 bytes
+            if not (2 <= len(cscript) <= 1_000_000):
+                return None
+
+            # sequence
+            if p + 4 > n: return None
+            p += 4
+
+            # skip remaining inputs (rare in coinbase, but be robust)
+            for _ in range(max(0, vin_cnt - 1)):
                 if p + 36 > n: return None
                 p += 36
                 scr, p = read_varbytes_at(p)
@@ -586,34 +605,18 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                 if p + 4 > n: return None
                 p += 4
 
-            # If many inputs, do a cheap skip for the rest (still bounds-checked)
-            for _ in range(max(0, vin_cnt - 8)):
-                if p + 36 > n: return None
-                p += 36
-                ln_off = p
-                ln, p2 = read_varint_at(ln_off)
-                if ln is None or p2 + ln + 4 > n: return None
-                p = p2 + ln + 4
-
             # vout
             vout_cnt, p = read_varint_at(p)
             if vout_cnt is None or vout_cnt < 1 or vout_cnt > 200000: return None
 
-            # outputs: value(8) + scriptpubkey
-            for _ in range(min(vout_cnt, 8)):
+            # outputs
+            for _ in range(vout_cnt):
                 if p + 8 > n: return None
                 p += 8
                 spk, p = read_varbytes_at(p)
                 if spk is None: return None
-            for _ in range(max(0, vout_cnt - 8)):
-                if p + 8 > n: return None
-                p += 8
-                ln_off = p
-                ln, p2 = read_varint_at(ln_off)
-                if ln is None or p2 + ln > n: return None
-                p = p2 + ln
 
-            # witnesses (for each input): stack_count + items
+            # segwit witnesses follow outputs (one vector per input)
             if segwit:
                 q = p
                 for _ in range(vin_cnt):
@@ -629,19 +632,19 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
             p += 4
             return p
 
-        # 2) Scan for [varint tx_count][tx0] that parses cleanly
+        # 2) Scan for [varint tx_count][coinbase tx]
         i = max(80, aux_end)
-        limit = min(n - 10, i + 1048576)  # scan up to +1 MiB
+        limit = min(n - 10, i + 1_572_864)  # scan up to +1.5 MiB
         while i < limit:
             txc, j = read_varint_at(i)
-            if txc is None or txc == 0 or txc > 1000000:
+            if txc is None or txc == 0 or txc > 1_000_000:
                 i += 1; continue
-            end0 = parse_first_tx(j)
+            end0 = parses_coinbase_tx(j)
             if end0 is not None:
                 return data[:i]  # header is everything before tx_count
             i += 1
 
-        # 3) Fallback: trust AuxPoW boundary if scan failed
+        # 3) Fallback: trust AuxPoW boundary
         return data[:aux_end]
 
     # heuristics
