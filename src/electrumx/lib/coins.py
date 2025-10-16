@@ -655,24 +655,29 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
 
         def parses_full_block_at(cand):
             """
-            Given a candidate header end 'cand', verify the entire block:
+            Given candidate header end 'cand', verify the entire block:
               - read tx_count,
               - coinbase at first tx with BIP34 height match,
               - parse remaining txs,
-              - ensure final position == n (or <= n, tolerating trailing 0 pad bytes).
-            Return True if consistent; else False.
+              - ensure end aligns with the end of raw bytes (allow trailing zero pads).
+            Prefer (but do not require) a SegWit commitment in the coinbase.
             """
             txc, j = read_varint_at(cand)
             if txc is None or txc == 0 or txc > 2_000_000:
                 return False
-            # tx0 must be our coinbase
+
+            # tx0 must be our coinbase (BIP34 height == height)
             end0, segw0, vin0, vout0, outs0 = parse_tx_at(j, require_coinbase=True)
             if end0 is None:
                 return False
-            # (Optional) require segwit commitment in coinbase outputs if present in chain
-            if not has_sw_commitment(outs0):
-                return False
+
+            # DO NOT require a SegWit commitment (blocks without witness txs may omit it)
+            # We keep this as a soft preference only.
+            # if not has_sw_commitment(outs0):
+            #     return False
+
             p = end0
+
             # parse the rest (txc - 1)
             for _ in range(txc - 1):
                 res = parse_tx_at(p, require_coinbase=False)
@@ -680,10 +685,10 @@ class Wiiicoin(AuxPowMixin, Bitcoin):
                 if endp is None:
                     return False
                 p = endp
-            # allow exact end or trailing zeros (rare)
+
+            # allow exact end or trailing zeros only
             if p == n:
                 return True
-            # tolerate padding zeros at the very end
             k = p
             while k < n and data[k] == 0x00:
                 k += 1
