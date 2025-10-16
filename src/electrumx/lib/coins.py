@@ -44,7 +44,7 @@ from electrumx.lib.script import (_match_ops, Script, ScriptError,
                                   ScriptPubKey, OpCodes)
 import electrumx.lib.tx as lib_tx
 from electrumx.lib import tx as lib_tx
-
+from electrumx.lib.coins import AuxPowMixin
 from electrumx.lib.tx import Tx, DeserializerSegWit
 import electrumx.lib.tx_dash as lib_tx_dash
 import electrumx.lib.tx_axe as lib_tx_axe
@@ -362,7 +362,7 @@ class Bitcoin(BitcoinMixin, Coin):
             return n // 24 * 24
         return 1008
 
-class Wiiicoin(Bitcoin):
+class Wiiicoin(AuxPowMixin, Bitcoin):
 
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
