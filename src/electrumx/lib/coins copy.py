@@ -29,7 +29,6 @@
 Anything coin-specific should go in this file and be subclassed where
 necessary for appropriate handling.
 '''
-
 from collections import namedtuple
 import re
 import struct
@@ -39,15 +38,23 @@ from hashlib import sha256
 import electrumx.lib.util as util
 from electrumx.lib.hash import Base58, hash160, double_sha256, hash_to_hex_str
 from electrumx.lib.hash import HASHX_LEN
+
+
+from dataclasses import dataclass
+
+from functools import partial
+
+from typing import Sequence, Tuple
+import hashlib
+
+from electrumx.lib.hash import Base58, double_sha256, hash_to_hex_str
+from electrumx.lib.hash import HASHX_LEN, hex_str_to_hash
 from electrumx.lib.script import (_match_ops, Script, ScriptError,
                                   ScriptPubKey, OpCodes)
 import electrumx.lib.tx as lib_tx
 import electrumx.server.block_processor as block_proc
 import electrumx.server.daemon as daemon
 from electrumx.server.session import (ElectrumX, AuxPoWElectrumX)
-
-Block = namedtuple("Block", "raw header transactions")
-
 
 class CoinError(Exception):
     '''Exception raised for coin-related errors.'''
@@ -740,30 +747,30 @@ class Wiiicoin(NameIndexMixin, Coin):
     BASIC_HEADER_SIZE = 157
     XPUB_VERBYTES = bytes.fromhex("0488b21e")
     XPRV_VERBYTES = bytes.fromhex("0488ade4")
-    P2PKH_VERBYTE = bytes.fromhex("87")
-    P2SH_VERBYTES = [bytes.fromhex("7D")]
-    WIF_BYTE = bytes.fromhex("89")
+    P2PKH_VERBYTE = bytes.fromhex("2d")
+    P2SH_VERBYTES = [bytes.fromhex("46")]
+    WIF_BYTE = bytes.fromhex("8b")
     GENESIS_HASH = ('70bd30ae775c691fc8a2b7d27f37279a'
                     '4f505f877e3234105f22e963a618597c')
     DESERIALIZER = lib_tx.DeserializerSegWit
-    TX_COUNT = 26500
-    TX_COUNT_HEIGHT = 30000
+    TX_COUNT = 40000
+    TX_COUNT_HEIGHT = 38871
     TX_PER_BLOCK = 2
     REORG_LIMIT = 800
-    RPC_PORT = 8868
+    RPC_PORT = 9332
     PEER_DEFAULT_PORTS = {'t': '50001', 's': '50002'}
     PEERS = [
-        #'ec0.wiiicoin.org s',
-        #'ec1.wiiicoin.org s',
+        'ec0.kevacoin.org s',
+        'ec1.kevacoin.org s',
     ]
 
-    # Wiiicoin specific block processor
-    BLOCK_PROCESSOR = block_proc.WiiiIndexBlockProcessor
+    # Kevacoin specific block processor
+    BLOCK_PROCESSOR = block_proc.KevaIndexBlockProcessor
 
-    # Op-codes for name operations, customized for Wiii
-    OP_NAME_REGISTER = OpCodes.OP_WIII_NAMESPACE
-    OP_NAME_UPDATE = OpCodes.OP_WIII_PUT
-    OP_NAME_DELETE = OpCodes.OP_WIII_DELETE
+    # Op-codes for name operations, customized for Keva
+    OP_NAME_REGISTER = OpCodes.OP_KEVA_NAMESPACE
+    OP_NAME_UPDATE = OpCodes.OP_KEVA_PUT
+    OP_NAME_DELETE = OpCodes.OP_KEVA_DELETE
 
     # Valid name prefixes.
     NAME_NAMESPACE_OPS = [OP_NAME_REGISTER, "name", "key", OpCodes.OP_2DROP]
@@ -808,7 +815,7 @@ class Wiiicoin(NameIndexMixin, Coin):
         key = named_values["key"][1]
         if script[0] == 0xd0:
             # Namespace creation script, special treatment.
-            name_index_script = cls.build_name_index_script(name + b'\x01_WIII_NS_')
+            name_index_script = cls.build_name_index_script(name + b'\x01_KEVA_NS_')
             return name_index_script, address_script
 
         # Build index if the key has a certain pattern.
@@ -873,7 +880,7 @@ class Wiiicoin(NameIndexMixin, Coin):
         return valueHashX
 
     @classmethod
-    def parse_wiii_script(cls, wiii_script):
-        name_values, _ = cls.interpret_name_prefix(wiii_script, cls.NAME_OPERATIONS)
-        name_values['op'] = wiii_script[0]
+    def parse_keva_script(cls, keva_script):
+        name_values, _ = cls.interpret_name_prefix(keva_script, cls.NAME_OPERATIONS)
+        name_values['op'] = keva_script[0]
         return name_values
