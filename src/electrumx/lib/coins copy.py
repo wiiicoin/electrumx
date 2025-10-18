@@ -768,9 +768,9 @@ class Wiiicoin(NameIndexMixin, Coin):
     BLOCK_PROCESSOR = block_proc.KevaIndexBlockProcessor
 
     # Op-codes for name operations, customized for Keva
-    OP_NAME_REGISTER = OpCodes.OP_KEVA_NAMESPACE
-    OP_NAME_UPDATE = OpCodes.OP_KEVA_PUT
-    OP_NAME_DELETE = OpCodes.OP_KEVA_DELETE
+    OP_NAME_REGISTER = OpCodes.OP_WIII_NAMESPACE
+    OP_NAME_UPDATE = OpCodes.OP_WIII_PUT
+    OP_NAME_DELETE = OpCodes.OP_WIII_DELETE
 
     # Valid name prefixes.
     NAME_NAMESPACE_OPS = [OP_NAME_REGISTER, "name", "key", OpCodes.OP_2DROP]
