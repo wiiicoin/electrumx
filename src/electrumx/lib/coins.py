@@ -741,7 +741,8 @@ class NamecoinRegtest(NamecoinTestnet):
     TX_COUNT = 1
     TX_COUNT_HEIGHT = 1
 
-class Wiiicoin(NameIndexMixin, Coin):
+#class Wiiicoin(NameIndexMixin, Coin):
+class Wiiicoin(Coin):
     NAME = "Wiiicoin"
     SHORTNAME = "WIII"
     NET = "main"
