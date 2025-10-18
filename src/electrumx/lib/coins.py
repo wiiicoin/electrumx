@@ -35,9 +35,20 @@ import re
 import struct
 from decimal import Decimal
 from hashlib import sha256
-
+import hashlib
 import electrumx.lib.util as util
 from electrumx.lib.hash import Base58, hash160, double_sha256, hash_to_hex_str
+try:
+    # If your Python/OpenSSL provides RIPEMD160 via hashlib (often not with OpenSSL 3)
+    def hash160(b: bytes) -> bytes:
+        return hashlib.new('ripemd160', hashlib.sha256(b).digest()).digest()
+except ValueError:
+    # Fallback via pycryptodomex
+    from Cryptodome.Hash import RIPEMD160
+    def hash160(b: bytes) -> bytes:
+        h = RIPEMD160.new()
+        h.update(hashlib.sha256(b).digest())
+        return h.digest()
 from electrumx.lib.hash import HASHX_LEN
 from electrumx.lib.script import (_match_ops, Script, ScriptError,
                                   ScriptPubKey, OpCodes)
