@@ -37,7 +37,7 @@ from decimal import Decimal
 from hashlib import sha256
 import hashlib
 import electrumx.lib.util as util
-from electrumx.lib.hash import Base58, hash160, double_sha256, hash_to_hex_str
+from electrumx.lib.hash import Base58, double_sha256, hash_to_hex_str
 try:
     # If your Python/OpenSSL provides RIPEMD160 via hashlib (often not with OpenSSL 3)
     def hash160(b: bytes) -> bytes:
