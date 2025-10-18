@@ -755,6 +755,7 @@ class Wiiicoin(NameIndexMixin, Coin):
     P2SH_VERBYTES = [bytes.fromhex("7D")]
     WIF_BYTE = bytes.fromhex("89")
     GENESIS_HASH = ('000000b6342a3f29e384a67490086d5dd987f6947a4308d56a893294b96fa146')
+    DAEMON_TX_HASH = False
     DESERIALIZER = lib_tx.DeserializerSegWit
     TX_COUNT = 26500
     TX_COUNT_HEIGHT = 30000
@@ -889,3 +890,9 @@ class Wiiicoin(NameIndexMixin, Coin):
         name_values, _ = cls.interpret_name_prefix(wiii_script, cls.NAME_OPERATIONS)
         name_values['op'] = wiii_script[0]
         return name_values
+    
+    @classmethod
+    def tx_hash(cls, raw_tx: bytes) -> bytes:
+        # Bitcoin-style txid (most forks): double SHA256 of raw tx bytes
+        import hashlib
+        return hashlib.sha256(hashlib.sha256(raw_tx).digest()).digest()
