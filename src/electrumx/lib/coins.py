@@ -759,7 +759,7 @@ class Wiiicoin(NameIndexMixin, Coin):
     DESERIALIZER = lib_tx.DeserializerSegWit
     TX_COUNT = 26500
     TX_COUNT_HEIGHT = 30000
-    TX_PER_BLOCK = 2
+    TX_PER_BLOCK = 1
     DEFAULT_MAX_SEND = 1_000_000   # bytes
     DEFAULT_MAX_RECV = 1_000_000   # bytes
     REORG_LIMIT = 800
