@@ -760,6 +760,8 @@ class Wiiicoin(NameIndexMixin, Coin):
     TX_COUNT = 26500
     TX_COUNT_HEIGHT = 30000
     TX_PER_BLOCK = 2
+    DEFAULT_MAX_SEND = 1_000_000   # bytes
+    DEFAULT_MAX_RECV = 1_000_000   # bytes
     REORG_LIMIT = 800
     RPC_PORT = 8868
     PEER_DEFAULT_PORTS = {'t': '50001', 's': '50002'}
