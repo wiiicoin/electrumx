@@ -754,8 +754,7 @@ class Wiiicoin(NameIndexMixin, Coin):
     P2PKH_VERBYTE = bytes.fromhex("87")
     P2SH_VERBYTES = [bytes.fromhex("7D")]
     WIF_BYTE = bytes.fromhex("89")
-    GENESIS_HASH = ('70bd30ae775c691fc8a2b7d27f37279a'
-                    '4f505f877e3234105f22e963a618597c')
+    GENESIS_HASH = ('000000b6342a3f29e384a67490086d5dd987f6947a4308d56a893294b96fa146')
     DESERIALIZER = lib_tx.DeserializerSegWit
     TX_COUNT = 26500
     TX_COUNT_HEIGHT = 30000
